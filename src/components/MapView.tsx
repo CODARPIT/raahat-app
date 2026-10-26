@@ -5,7 +5,7 @@ import "leaflet/dist/leaflet.css";
 import { useEffect } from "react";
 import { divIcon } from "leaflet";
 import { CircleMarker, MapContainer, Marker, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
-import type { Report } from "@/lib/types";
+import { isLocated, type Report } from "@/lib/types";
 
 const COLOR = { critical: "#b3122e", high: "#c98200", moderate: "#3f7690", low: "#7c8b87" } as const;
 const RADIUS = { critical: 13, high: 10, moderate: 8, low: 6 } as const;
@@ -40,21 +40,32 @@ export interface MapViewProps {
   onSelect?: (r: Report) => void;
   onPick?: (lat: number, lng: number) => void;
   pin?: { lat: number; lng: number } | null;
+  /** A place-name guess for an unlocated report: drawn dashed, never auto-confirmed. */
+  suggested?: { lat: number; lng: number; label: string } | null;
+  /** Crosshair cursor while a coordinator is placing a pin. */
+  picking?: boolean;
   center?: [number, number];
 }
 
-export default function MapView({ reports = [], selectedId, onSelect, onPick, pin, center }: MapViewProps) {
-  const selected = reports.find((r) => r.publicId === selectedId);
+export default function MapView({ reports = [], selectedId, onSelect, onPick, pin, suggested, picking, center }: MapViewProps) {
+  const located = reports.filter(isLocated);
+  const selected = located.find((r) => r.publicId === selectedId);
   const start: [number, number] =
-    center ?? (reports[0] ? [reports[0].lat, reports[0].lng] : [28.6139, 77.209]); // New Delhi
+    center ?? (located[0] ? [located[0].lat, located[0].lng] : [28.6139, 77.209]); // New Delhi
 
   return (
-    <MapContainer center={start} zoom={12} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
+    <MapContainer
+      center={start}
+      zoom={12}
+      style={{ height: "100%", width: "100%", cursor: picking ? "crosshair" : undefined }}
+      className={picking ? "map-picking" : undefined}
+      scrollWheelZoom
+    >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
-      {reports
+      {located
         .filter((r) => !r.duplicateOf)
         .map((r) => (
           <CircleMarker
@@ -85,6 +96,17 @@ export default function MapView({ reports = [], selectedId, onSelect, onPick, pi
           </Tooltip>
         </Marker>
       )}
+      {suggested && (
+        <CircleMarker
+          center={[suggested.lat, suggested.lng]}
+          radius={16}
+          pathOptions={{ color: "#13272c", weight: 2, dashArray: "5 5", fillColor: "#e0a100", fillOpacity: 0.25 }}
+          eventHandlers={{ click: () => onPick?.(suggested.lat, suggested.lng) }}
+        >
+          <Tooltip permanent direction="top">Suggested: {suggested.label.split(",").slice(0, 2).join(",")}</Tooltip>
+        </CircleMarker>
+      )}
+      {suggested && !selected && <FlyTo lat={suggested.lat} lng={suggested.lng} zoom={15} />}
       {selected && <FlyTo lat={selected.lat} lng={selected.lng} zoom={17} />}
       {pin && <FlyTo lat={pin.lat} lng={pin.lng} />}
       {onPick && <Picker onPick={onPick} />}

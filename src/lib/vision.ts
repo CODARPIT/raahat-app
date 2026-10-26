@@ -2,8 +2,9 @@
 // Two calls per report:
 //   1. ai_vision_tagging  — our 10-category disaster taxonomy (deterministic labels)
 //   2. ai_vision_general  — one JSON-answer prompt for people, water depth, authenticity, summaries
-// If the add-on isn't enabled (or RAAHAT_AI_MODE=demo) we fall back to a transparent
-// rule-based reading of the reporter's note, and the report is labelled "demo".
+// If the add-on isn't enabled, a call times out (RAAHAT_AI_TIMEOUT_MS), or RAAHAT_AI_MODE=demo,
+// we fall back to a transparent rule-based reading of the reporter's note, and the report
+// is labelled "rule-based".
 
 import { CATEGORIES, type Category, type VisionFindings, type WaterDepth } from "./types";
 
@@ -32,26 +33,75 @@ const JSON_PROMPT = `You are triaging a citizen photo for disaster responders in
  "water_depth": one of "none","ankle","knee","waist","chest_or_more","unknown" (judge against people, vehicles, doors),
  "access_blocked": boolean (can a rescue vehicle NOT reach this spot?),
  "summary": "one factual sentence for a rescue coordinator, under 25 words",
- "summary_hi": "the same sentence in simple Hindi (Devanagari)"}`;
+ "summary_hi": "the same sentence in simple Hindi (Devanagari)",
+ "place_names": array of strings (names of places, shops, schools, temples, roads or landmarks readable on signs or text in the image; [] if none)}`;
 
 type Mode = "live" | "demo" | "auto";
 
-async function analyze(model: string, body: unknown) {
+type Fetch = typeof fetch;
+
+export interface AiOptions {
+  mode?: Mode;
+  timeoutMs?: number;
+  fetchImpl?: Fetch;
+}
+
+/** Latest AI Vision quota Cloudinary reported, shown in the control room header. */
+export interface AiQuota {
+  remaining: number;
+  limit: number | null;
+  at: string;
+}
+let lastQuota: AiQuota | null = null;
+export const getAiQuota = () => lastQuota;
+
+export function aiMode(): Mode {
+  const m = process.env.RAAHAT_AI_MODE;
+  return m === "live" || m === "demo" ? m : "auto";
+}
+
+function aiTimeoutMs() {
+  const n = Number(process.env.RAAHAT_AI_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? n : 15000;
+}
+
+function rememberQuota(json: unknown) {
+  const q = (json as { limits?: { addons_quota?: { remaining?: unknown; limit?: unknown }[] } })?.limits?.addons_quota?.[0];
+  const remaining = Number(q?.remaining);
+  if (q && Number.isFinite(remaining)) {
+    const limit = Number(q.limit);
+    lastQuota = { remaining, limit: Number.isFinite(limit) ? limit : null, at: new Date().toISOString() };
+  }
+}
+
+async function analyze(model: string, body: unknown, opts: Required<Pick<AiOptions, "timeoutMs" | "fetchImpl">>) {
   const key = process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY;
   const secret = process.env.CLOUDINARY_API_SECRET;
   const cloud = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
   if (!key || !secret || !cloud) throw new Error("Cloudinary credentials are not set.");
   const auth = Buffer.from(`${key}:${secret}`).toString("base64");
-  const res = await fetch(`https://api.cloudinary.com/v2/analysis/${cloud}/analyze/${model}`, {
-    method: "POST",
-    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`AI Vision ${model} failed (${res.status}): ${text.slice(0, 200)}`);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs);
+  try {
+    const res = await opts.fetchImpl(`https://api.cloudinary.com/v2/analysis/${cloud}/analyze/${model}`, {
+      method: "POST",
+      headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`AI Vision ${model} failed (${res.status}): ${text.slice(0, 200)}`);
+    }
+    const json = (await res.json()) as { data?: { analysis?: Record<string, unknown> } };
+    rememberQuota(json);
+    return json;
+  } catch (err) {
+    if (ctrl.signal.aborted) throw new Error(`AI Vision ${model} timed out after ${opts.timeoutMs} ms`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json() as Promise<{ data?: { analysis?: Record<string, unknown> } }>;
 }
 
 /** Pull the first {...} block out of a model reply and parse it. */
@@ -82,18 +132,21 @@ export function findingsFromLive(tagNames: string[], json: Record<string, unknow
     accessBlocked: j.access_blocked === true,
     summary: typeof j.summary === "string" ? j.summary : "Photo received; automatic summary unavailable.",
     summaryHi: typeof j.summary_hi === "string" ? j.summary_hi : "फ़ोटो मिली; स्वचालित सारांश उपलब्ध नहीं।",
+    placeNames: Array.isArray(j.place_names)
+      ? j.place_names.filter((p): p is string => typeof p === "string" && p.trim().length > 1).map((p) => p.trim().slice(0, 60)).slice(0, 5)
+      : [],
     mode: "live",
   };
 }
 
-async function liveFindings(imageUrl: string): Promise<VisionFindings> {
+async function liveFindings(imageUrl: string, opts: Required<Pick<AiOptions, "timeoutMs" | "fetchImpl">>): Promise<VisionFindings> {
   // Cloudinary tag names allow only lower-case letters, digits and hyphens,
   // and the tagging analyzer takes at most 10 definitions per call.
   const defs = TAG_DEFINITIONS.map((t) => ({ ...t, name: t.name.replace(/_/g, "-") }));
   const batches = [defs.slice(0, 10), defs.slice(10)].filter((b) => b.length);
   const [general, ...taggings] = await Promise.all([
-    analyze("ai_vision_general", { source: { uri: imageUrl }, prompts: [JSON_PROMPT] }),
-    ...batches.map((b) => analyze("ai_vision_tagging", { source: { uri: imageUrl }, tag_definitions: b })),
+    analyze("ai_vision_general", { source: { uri: imageUrl }, prompts: [JSON_PROMPT] }, opts),
+    ...batches.map((b) => analyze("ai_vision_tagging", { source: { uri: imageUrl }, tag_definitions: b }, opts)),
   ]);
   const tags = taggings.flatMap((t) => (t.data?.analysis?.tags as { name: string }[] | undefined) ?? []);
   const responses = (general.data?.analysis?.responses as { value: string }[] | undefined) ?? [];
@@ -150,18 +203,19 @@ export function demoFindings(note: string): VisionFindings {
     accessBlocked: cats.includes("road_blocked") || cats.includes("landslide") || depth === "waist" || depth === "chest_or_more",
     summary: `Reporter says: ${trimmed}`,
     summaryHi: `रिपोर्टर के अनुसार: ${trimmed}`,
+    placeNames: [],
     mode: "demo",
   };
 }
 
-export async function getFindings(imageUrl: string, note: string): Promise<VisionFindings> {
-  const mode = (process.env.RAAHAT_AI_MODE ?? "auto") as Mode;
+export async function getFindings(imageUrl: string, note: string, opts: AiOptions = {}): Promise<VisionFindings> {
+  const mode = opts.mode ?? aiMode();
   if (mode === "demo") return demoFindings(note);
   try {
-    return await liveFindings(imageUrl);
+    return await liveFindings(imageUrl, { timeoutMs: opts.timeoutMs ?? aiTimeoutMs(), fetchImpl: opts.fetchImpl ?? fetch });
   } catch (err) {
     if (mode === "live") throw err;
-    console.warn("[raahat] AI Vision unavailable, using demo triage:", (err as Error).message);
+    console.warn("[raahat] AI Vision unavailable, using rule-based triage:", (err as Error).message);
     return demoFindings(note);
   }
 }

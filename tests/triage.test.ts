@@ -10,9 +10,12 @@ import {
   severityFor,
   type Candidate,
 } from "../src/lib/triage";
-import { encodeOverlayText } from "../src/lib/cld-url";
-import { demoFindings, findingsFromLive, parseJsonReply } from "../src/lib/vision";
-import type { VisionFindings } from "../src/lib/types";
+import { alertCardUrl, encodeOverlayText } from "../src/lib/cld-url";
+import { exifDate, exifLocation, oldPhotoReason, parseCoordinate } from "../src/lib/exif";
+import { mergeReports } from "../src/lib/merge";
+import { placeHint, placesFromNote } from "../src/lib/place";
+import { demoFindings, findingsFromLive, getFindings, parseJsonReply } from "../src/lib/vision";
+import type { Report, VisionFindings } from "../src/lib/types";
 
 const base: VisionFindings = {
   categories: ["flood"],
@@ -24,6 +27,7 @@ const base: VisionFindings = {
   accessBlocked: false,
   summary: "",
   summaryHi: "",
+  placeNames: [],
   mode: "live",
 };
 
@@ -164,4 +168,133 @@ test("new life-safety types outrank property damage", () => {
 
 test("overlay text escapes commas and slashes for Cloudinary", () => {
   assert.equal(encodeOverlayText("Flood, 2/3 lanes"), "Flood%252C%202%252F3%20lanes");
+});
+
+// ── v2: explainable score ────────────────────────────────────────────────────
+
+test("breakdown lines add up to the score", () => {
+  const findings: VisionFindings = { ...base, categories: ["trapped_or_injured", "flood"], peopleInDanger: true, peopleVisible: 3, waterDepth: "waist", accessBlocked: true };
+  const r = scoreReport({ findings, corroborations: 2 });
+  const adds = r.breakdown.filter((l) => l.kind === "add");
+  const raw = adds.reduce((s, l) => s + l.points, 0);
+  // 40 trapped + 5 flood + 30 danger + 4.5 people + 15 waist + 5 access + 8 corroboration
+  assert.equal(raw, 107.5);
+  assert.equal(r.score, 100);
+  assert.deepEqual(adds.map((l) => l.label), [
+    "People trapped or injured", "Also flooding", "Someone in danger", "3 people visible",
+    "Waist-deep water", "Vehicles can't reach", "2 other reports of this incident",
+  ]);
+  assert.equal(r.breakdown.at(-1)?.label, "Capped at 100");
+  assert.equal(Math.round(r.breakdown.reduce((s, l) => s + l.points, 0)), r.score);
+});
+
+test("review reasons multiply the score by 0.3 and say why", () => {
+  const r = scoreReport({ findings: { ...base, categories: ["fire"], waterDepth: "none" }, corroborations: 0, reviewReasons: ["Photo taken on 3 Jul 2017"] });
+  assert.equal(r.needsReview, true);
+  assert.equal(r.score, Math.round(35 * 0.3));
+  const adjust = r.breakdown.find((l) => l.kind === "adjust");
+  assert.match(adjust!.label, /Photo taken on 3 Jul 2017 ×0.3/);
+  assert.equal(Math.round(r.breakdown.reduce((s, l) => s + l.points, 0)), r.score);
+});
+
+// ── v2: missing locations ────────────────────────────────────────────────────
+
+test("a report without location can still be a duplicate via phash", () => {
+  const m = matchReport({ lat: null, lng: null, phash: "a1b2c3d4e5f60719", primaryCategory: "trapped_or_injured", createdAt: now }, existing);
+  assert.equal(m.duplicateOf, "a");
+});
+
+test("a report without location never corroborates, and is never corroborated", () => {
+  const m = matchReport({ lat: null, lng: null, phash: "ffff0000ffff0000", primaryCategory: "flood", createdAt: now }, existing);
+  assert.deepEqual(m, { duplicateOf: null, corroborates: [] });
+  const unlocated: Candidate[] = [{ publicId: "u", lat: null, lng: null, phash: null, primaryCategory: "flood", createdAt: now, duplicateOf: null }];
+  assert.deepEqual(matchReport({ lat: 26.145, lng: 91.7366, phash: null, primaryCategory: "flood", createdAt: now }, unlocated).corroborates, []);
+});
+
+function report(over: Partial<Report> = {}): Report {
+  return {
+    publicId: "r1", resourceType: "image", createdAt: "2026-10-24T10:00:00Z", updatedAt: "2026-10-24T10:00:00Z",
+    channel: "web", lat: 26.14, lng: 91.73, locationSource: "gps", placeHint: "", note: "", lang: "en",
+    categories: ["flood"], primaryCategory: "flood", severity: "low", score: 20, breakdown: [],
+    peopleVisible: 0, peopleInDanger: false, waterDepth: "unknown", accessBlocked: false, summary: "flood", summaryHi: "",
+    status: "new", needsReview: false, reviewReasons: [], duplicateOf: null, corroborations: 0,
+    originalBytes: 0, thumbBytes: 0, aiMode: "demo", phash: null, reporterHash: null, ...over,
+  };
+}
+
+test("alert card says the location is pending", () => {
+  assert.match(alertCardUrl(report({ lat: null, lng: null })), /Location%20pending/);
+});
+
+// ── v2: consistency cache ────────────────────────────────────────────────────
+
+test("merged list prefers the newer cached copy over a stale Search copy", () => {
+  const searched = [report({ status: "new", updatedAt: "2026-10-24T10:00:00Z" }), report({ publicId: "r2" })];
+  const cached = [report({ status: "dispatched", updatedAt: "2026-10-24T10:05:00Z" }), report({ publicId: "r3", createdAt: "2026-10-24T11:00:00Z" })];
+  const merged = mergeReports(searched, cached);
+  assert.equal(merged.find((r) => r.publicId === "r1")?.status, "dispatched");
+  // Newest first; the just-triaged r3 shows up before Search has indexed it.
+  assert.deepEqual(merged.map((r) => r.publicId), ["r3", "r1", "r2"]);
+});
+
+test("a newer Search copy (written by another instance) beats an older cached one", () => {
+  const merged = mergeReports(
+    [report({ status: "resolved", updatedAt: "2026-10-24T12:00:00Z" })],
+    [report({ status: "new", updatedAt: "2026-10-24T10:00:00Z" })],
+  );
+  assert.equal(merged[0].status, "resolved");
+});
+
+// ── v2: EXIF ─────────────────────────────────────────────────────────────────
+
+test("EXIF date older than 7 days adds a review reason", () => {
+  const reported = new Date("2026-10-24T10:00:00Z");
+  assert.equal(oldPhotoReason(exifDate({ DateTimeOriginal: "2017:07:03 09:12:00" }), reported), "Photo taken on 3 Jul 2017");
+  assert.equal(oldPhotoReason(exifDate({ DateTimeOriginal: "2026:10:22 18:00:00" }), reported), null);
+  assert.equal(oldPhotoReason(exifDate({}), reported), null);
+  assert.equal(exifDate({ DateTimeOriginal: "0000:00:00 00:00:00" }), null);
+});
+
+test("EXIF GPS is read from degrees-minutes-seconds", () => {
+  assert.ok(Math.abs(parseCoordinate(`26 deg 8' 40.20" N`)! - 26.1445) < 1e-4);
+  assert.ok(Math.abs(parseCoordinate(`77 deg 12' 32.40" W`)! + 77.209) < 1e-4);
+  assert.equal(parseCoordinate("28.5", "S"), -28.5);
+  assert.equal(exifLocation({ GPSLatitude: "0", GPSLongitude: "0" }), null);
+  const loc = exifLocation({ GPSLatitude: `26 deg 8' 40.20" N`, GPSLongitude: `91 deg 44' 10.32" E` });
+  assert.ok(loc && Math.abs(loc.lng - 91.7362) < 1e-4);
+});
+
+// ── v2: place hints ──────────────────────────────────────────────────────────
+
+test("place hints come from English and Hindi notes", () => {
+  assert.deepEqual(placesFromNote("Water up to the waist near Gandhi School, 2 families on the roof"), ["Gandhi School"]);
+  assert.ok(placesFromNote("कमर तक पानी, मंदिर के पास 2 परिवार फँसे हैं").includes("मंदिर"));
+  assert.ok(placesFromNote("Stuck opposite the bus stand where water is rising").includes("bus stand"));
+  assert.deepEqual(placesFromNote("water everywhere, please help"), []);
+});
+
+test("place hint merges note, description and photo without repeats", () => {
+  assert.equal(placeHint("near Gandhi School", "Gandhi School, Rampur", ["GANDHI SCHOOL", "Shiv Mandir"]), "Gandhi School, Rampur, Shiv Mandir");
+});
+
+// ── v2: AI timeout ───────────────────────────────────────────────────────────
+
+test("AI timeout falls back to rule-based mode", async () => {
+  // Fake credentials only: the fetch below never leaves the process.
+  process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME = "test_cloud";
+  process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY = "test_key";
+  process.env.CLOUDINARY_API_SECRET = "test_secret";
+  const hang = ((_url: string, init?: RequestInit) =>
+    new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))))) as typeof fetch;
+  const started = Date.now();
+  const f = await getFindings("https://example.invalid/x.jpg", "Two families stuck on the roof", { mode: "auto", timeoutMs: 30, fetchImpl: hang });
+  assert.equal(f.mode, "demo");
+  assert.ok(f.categories.includes("trapped_or_injured"));
+  assert.ok(Date.now() - started < 1000);
+  await assert.rejects(getFindings("https://example.invalid/x.jpg", "", { mode: "live", timeoutMs: 30, fetchImpl: hang }), /timed out/);
+});
+
+test("place names from the AI are sanitised", () => {
+  const f = findingsFromLive(["flood"], { place_names: ["Gandhi School", 7, " ", "x".repeat(99)] });
+  assert.deepEqual(f.placeNames, ["Gandhi School", "x".repeat(60)]);
 });

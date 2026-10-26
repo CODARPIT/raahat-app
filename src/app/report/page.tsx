@@ -15,7 +15,7 @@ interface Upload {
   resourceType: "image" | "video";
 }
 
-type Loc = { lat: number; lng: number; accuracy?: number } | null;
+type Loc = { lat: number; lng: number; accuracy?: number; source: "gps" | "map_pin" } | null;
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
 const API_KEY = process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY;
@@ -73,7 +73,8 @@ export default function ReportPage() {
   const t = T[lang];
   const [upload, setUpload] = useState<Upload | null>(null);
   const [loc, setLoc] = useState<Loc>(null);
-  const [locState, setLocState] = useState<"idle" | "locating" | "found" | "failed">("idle");
+  const [locState, setLocState] = useState<"idle" | "locating" | "found" | "failed" | "unknown">("idle");
+  const [place, setPlace] = useState("");
   const [note, setNote] = useState("");
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -85,7 +86,7 @@ export default function ReportPage() {
     setLocState("locating");
     navigator.geolocation.getCurrentPosition(
       (p) => {
-        setLoc({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy });
+        setLoc({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, source: "gps" });
         setLocState("found");
       },
       () => setLocState("failed"),
@@ -119,13 +120,22 @@ export default function ReportPage() {
   async function send() {
     setError(null);
     if (!upload) return setError(t.needPhoto);
-    if (!loc) return setError(t.needLocation);
+    // No location is fine: the report is never dropped, a coordinator pins it.
+    const where = locState === "unknown" ? null : loc;
     setSending(true);
     try {
       const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...upload, lat: loc.lat, lng: loc.lng, note, lang }),
+        body: JSON.stringify({
+          ...upload,
+          lat: where?.lat ?? null,
+          lng: where?.lng ?? null,
+          locationSource: where?.source,
+          place,
+          note,
+          lang,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "The report didn't go through. Check your connection and send again.");
@@ -140,6 +150,7 @@ export default function ReportPage() {
   function reset() {
     setUpload(null);
     setNote("");
+    setPlace("");
     setResult(null);
     setError(null);
   }
@@ -167,6 +178,7 @@ export default function ReportPage() {
                 {!result.duplicateOf && result.corroborations > 0 &&
                   (lang === "hi" ? `. ${result.corroborations} और लोगों ने यही बताया है।` : `. ${result.corroborations} other people reported this too.`)}
               </p>
+              {result.lat === null && <p className="hint">{t.pendingLocation}</p>}
             </div>
           </div>
           <div className="preview" style={{ marginTop: 16 }}>
@@ -211,18 +223,32 @@ export default function ReportPage() {
                 )}
                 {locState === "failed" && !loc && t.locationFailed}
                 {locState === "failed" && loc && <span className="num">{loc.lat.toFixed(4)}, {loc.lng.toFixed(4)}</span>}
+                {locState === "unknown" && t.noLocationNote}
               </span>
-              {locState !== "locating" && (
-                <button type="button" className="btn" style={{ minHeight: 38 }} onClick={locate}>{t.useLocation}</button>
-              )}
+              <span className="loc-actions">
+                {locState !== "locating" && (
+                  <button type="button" className="btn" onClick={locate}>{t.useLocation}</button>
+                )}
+                {locState !== "unknown" && locState !== "found" && (
+                  <button type="button" className="btn" onClick={() => setLocState("unknown")}>{t.dontKnow}</button>
+                )}
+              </span>
             </div>
             {locState === "failed" && (
               <div style={{ height: 240, marginTop: 10, borderRadius: 12, overflow: "hidden", border: "1px solid var(--line)" }}>
-                <MapView pin={loc} onPick={(lat, lng) => setLoc({ lat, lng })} />
+                <MapView pin={loc} onPick={(lat, lng) => setLoc({ lat, lng, source: "map_pin" })} />
               </div>
             )}
-            {locState === "failed" && <p className="hint">{lang === "hi" ? "नक़्शे पर अपनी जगह पर टैप करें।" : "Or tap your spot on the map."}</p>}
+            {locState === "failed" && <p className="hint">{t.tapMap}</p>}
           </div>
+
+          {(locState === "unknown" || (locState === "failed" && !loc)) && (
+            <div className="field">
+              <label htmlFor="place">{t.describePlace}</label>
+              <input id="place" type="text" value={place} onChange={(e) => setPlace(e.target.value)} placeholder={t.describePlaceholder} maxLength={200} />
+              <p className="hint">{t.describePlaceHint}</p>
+            </div>
+          )}
 
           <div className="field">
             <label htmlFor="note">{t.noteLabel}</label>

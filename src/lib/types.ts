@@ -22,6 +22,15 @@ export type Category = (typeof CATEGORIES)[number];
 export type Severity = "critical" | "high" | "moderate" | "low";
 export type Status = "new" | "verified" | "dispatched" | "resolved" | "rejected";
 export type WaterDepth = "none" | "ankle" | "knee" | "waist" | "chest_or_more" | "unknown";
+export type LocationSource = "gps" | "map_pin" | "whatsapp_pin" | "exif" | "coordinator" | "missing";
+export type Channel = "web" | "whatsapp";
+
+/** One line of "Why this score". `add` lines sum to the raw score; `adjust` lines are the multiplier and caps. */
+export interface ScoreLine {
+  label: string;
+  points: number;
+  kind: "add" | "adjust";
+}
 
 /** What the AI (or the demo fallback) concluded about one photo. */
 export interface VisionFindings {
@@ -34,6 +43,7 @@ export interface VisionFindings {
   accessBlocked: boolean;
   summary: string; // one sentence, English
   summaryHi: string; // one sentence, Hindi
+  placeNames: string[]; // signs, shop names, landmarks the AI could read in the photo
   mode: "live" | "demo";
 }
 
@@ -41,14 +51,19 @@ export interface Report {
   publicId: string;
   resourceType: "image" | "video";
   createdAt: string; // ISO
-  lat: number;
-  lng: number;
+  updatedAt: string; // ISO, last write; between the cache and Search, the newer copy wins
+  channel: Channel;
+  lat: number | null; // null until the reporter or a coordinator pins it
+  lng: number | null;
+  locationSource: LocationSource;
+  placeHint: string; // place names from the note, the "describe the place" field and the photo
   note: string;
   lang: "en" | "hi";
   categories: Category[];
   primaryCategory: Category;
   severity: Severity;
   score: number; // 0–100
+  breakdown: ScoreLine[]; // recomputed from the stored fields, so it always matches the score
   peopleVisible: number;
   peopleInDanger: boolean;
   waterDepth: WaterDepth;
@@ -56,11 +71,20 @@ export interface Report {
   summary: string;
   summaryHi: string;
   status: Status;
-  needsReview: boolean; // AI thinks it may be fake / unrelated
+  needsReview: boolean; // true when there is any review reason
+  reviewReasons: string[]; // e.g. "looks like a screenshot", "photo taken on 12 Jul 2024"
   duplicateOf: string | null; // publicId of the primary report
   corroborations: number; // independent reports of the same incident
   originalBytes: number;
   thumbBytes: number;
   aiMode: "live" | "demo";
   phash: string | null;
+  reporterHash: string | null; // sha256 of a WhatsApp number, never the number itself
+}
+
+/** A report that has a location. Only these can corroborate or be drawn on the map. */
+export type LocatedReport = Report & { lat: number; lng: number };
+
+export function isLocated<T extends { lat: number | null; lng: number | null }>(r: T): r is T & { lat: number; lng: number } {
+  return r.lat !== null && r.lng !== null;
 }
