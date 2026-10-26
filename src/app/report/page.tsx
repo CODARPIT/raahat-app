@@ -1,11 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Gauge } from "@/components/Gauge";
 import { CATEGORY_LABEL, thumbUrl } from "@/lib/cld-url";
 import { REPORT_FOLDER, REPORT_TAG } from "@/lib/constants";
 import { SEVERITY_LABEL, T, type Lang } from "@/lib/i18n";
+import { listItems, online, OfflineError, putItem, removeItem, type OutboxMeta } from "@/lib/outbox";
 import type { Report } from "@/lib/types";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
@@ -15,7 +16,7 @@ interface Upload {
   resourceType: "image" | "video";
 }
 
-type Loc = { lat: number; lng: number; accuracy?: number } | null;
+type Loc = { lat: number; lng: number; accuracy?: number; source: "gps" | "map_pin" } | null;
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
 const API_KEY = process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY;
@@ -41,17 +42,14 @@ async function downscale(file: File): Promise<Blob> {
 }
 
 /** Signed direct upload, so the camera opens in one tap instead of inside a widget. */
-async function uploadPhoto(file: File): Promise<Upload> {
+async function uploadPhoto(body: Blob): Promise<Upload> {
   const timestamp = Math.round(Date.now() / 1000);
   const paramsToSign = { folder: REPORT_FOLDER, tags: REPORT_TAG, timestamp };
-  const [body, signRes] = await Promise.all([
-    downscale(file),
-    fetch("/api/sign", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ paramsToSign }),
-    }),
-  ]);
+  const signRes = await fetch("/api/sign", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ paramsToSign }),
+  });
   const signed = await signRes.json();
   if (!signRes.ok) throw new Error(signed.error ?? "Couldn't prepare the upload.");
 
@@ -68,24 +66,100 @@ async function uploadPhoto(file: File): Promise<Upload> {
   return { publicId: data.public_id, resourceType: data.resource_type === "video" ? "video" : "image" };
 }
 
+async function postReport(upload: Upload, meta: OutboxMeta): Promise<Report> {
+  const res = await fetch("/api/reports", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...upload, ...meta }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "The report didn't go through. Check your connection and send again.");
+  return data.report as Report;
+}
+
 export default function ReportPage() {
   const [lang, setLang] = useState<Lang>("en");
   const t = T[lang];
   const [upload, setUpload] = useState<Upload | null>(null);
   const [loc, setLoc] = useState<Loc>(null);
-  const [locState, setLocState] = useState<"idle" | "locating" | "found" | "failed">("idle");
+  const [locState, setLocState] = useState<"idle" | "locating" | "found" | "failed" | "unknown">("idle");
+  const [place, setPlace] = useState("");
   const [note, setNote] = useState("");
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Report | null>(null);
+  // Offline support: a photo that couldn't upload yet, and reports saved on the phone.
+  const [local, setLocal] = useState<{ blob: Blob; url: string } | null>(null);
+  const [offlineNote, setOfflineNote] = useState(false);
+  const [queuedId, setQueuedId] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState(0);
+  const [flushing, setFlushing] = useState(false);
+  const queuedRef = useRef<string | null>(null);
+  const busyRef = useRef(false);
+  queuedRef.current = queuedId;
+
+  useEffect(() => {
+    if (!local) return;
+    return () => URL.revokeObjectURL(local.url);
+  }, [local]);
+
+  /** Send everything saved on the phone, oldest first. Stops at the first sign of no signal. */
+  const flush = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const items = await listItems();
+      setWaiting(items.length);
+      if (!items.length) return;
+      setFlushing(true);
+      for (const item of items) {
+        try {
+          let up = item.upload;
+          if (!up) {
+            up = await online(() => uploadPhoto(item.blob!));
+            await putItem({ ...item, upload: up, blob: null }); // never upload the same photo twice
+          }
+          const report = await online(() => postReport(up!, item.meta));
+          await removeItem(item.id);
+          if (item.id === queuedRef.current) {
+            setResult(report);
+            setQueuedId(null);
+          }
+        } catch (err) {
+          if (err instanceof OfflineError) break;
+          // Sent earlier but the reply was lost on a weak connection: it's already in the queue.
+          if (/already triaged/i.test((err as Error).message)) {
+            await removeItem(item.id);
+            continue;
+          }
+          // A server error: keep it and try again on the next round.
+          console.warn("[raahat] saved report not sent yet:", (err as Error).message);
+        }
+      }
+      setWaiting((await listItems()).length);
+    } finally {
+      setFlushing(false);
+      busyRef.current = false;
+    }
+  }, []);
+
+  useEffect(() => {
+    flush();
+    window.addEventListener("online", flush);
+    const id = setInterval(flush, 20000);
+    return () => {
+      window.removeEventListener("online", flush);
+      clearInterval(id);
+    };
+  }, [flush]);
 
   const locate = useCallback(() => {
     if (!("geolocation" in navigator)) return setLocState("failed");
     setLocState("locating");
     navigator.geolocation.getCurrentPosition(
       (p) => {
-        setLoc({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy });
+        setLoc({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, source: "gps" });
         setLocState("found");
       },
       () => setLocState("failed"),
@@ -106,32 +180,42 @@ export default function ReportPage() {
       return setError(lang === "hi" ? "फ़ाइल 40 MB से बड़ी है।" : "That file is over 40 MB. Try a photo or a shorter video.");
     }
     setError(null);
+    setOfflineNote(false);
+    setUpload(null);
     setUploading(true);
     try {
-      setUpload(await uploadPhoto(file));
+      const blob = await downscale(file);
+      setLocal({ blob, url: URL.createObjectURL(blob) });
+      setUpload(await online(() => uploadPhoto(blob)));
     } catch (err) {
-      setError((err as Error).message);
+      // No signal: keep the photo on the phone; it goes with the report when the connection returns.
+      if (err instanceof OfflineError) setOfflineNote(true);
+      else setError((err as Error).message);
     } finally {
       setUploading(false);
     }
   }
 
+  async function queue(meta: OutboxMeta) {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await putItem({ id, createdAt: Date.now(), blob: upload ? null : local!.blob, upload, meta });
+    setQueuedId(id);
+    setWaiting((n) => n + 1);
+  }
+
   async function send() {
     setError(null);
-    if (!upload) return setError(t.needPhoto);
-    if (!loc) return setError(t.needLocation);
+    if (!upload && !local) return setError(t.needPhoto);
+    // No location is fine: the report is never dropped, a coordinator pins it.
+    const where = locState === "unknown" ? null : loc;
+    const meta: OutboxMeta = { lat: where?.lat ?? null, lng: where?.lng ?? null, locationSource: where?.source, place, note, lang };
     setSending(true);
     try {
-      const res = await fetch("/api/reports", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...upload, lat: loc.lat, lng: loc.lng, note, lang }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "The report didn't go through. Check your connection and send again.");
-      setResult(data.report as Report);
+      if (!upload) await queue(meta); // the photo itself is still waiting for signal
+      else setResult(await online(() => postReport(upload, meta)));
     } catch (e) {
-      setError((e as Error).message);
+      if (e instanceof OfflineError) await queue(meta);
+      else setError((e as Error).message);
     } finally {
       setSending(false);
     }
@@ -139,19 +223,56 @@ export default function ReportPage() {
 
   function reset() {
     setUpload(null);
+    setLocal(null);
+    setOfflineNote(false);
     setNote("");
+    setPlace("");
     setResult(null);
+    setQueuedId(null);
     setError(null);
   }
 
   return (
     <main className="report-page" lang={lang}>
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <ol>
+          <li><a href="/">{lang === "hi" ? "होम" : "Home"}</a></li>
+          <li aria-current="page">{lang === "hi" ? "घटना की रिपोर्ट करें" : "Report an incident"}</li>
+        </ol>
+      </nav>
       <div className="lang-toggle" role="group" aria-label="Language">
         <button aria-pressed={lang === "en"} onClick={() => setLang("en")}>English</button>
         <button aria-pressed={lang === "hi"} onClick={() => setLang("hi")} lang="hi">हिंदी</button>
       </div>
 
-      {result ? (
+      {waiting > 0 && !queuedId && (
+        <p className="outbox-banner" role="status">
+          {flushing ? t.sendingSaved : t.waiting(waiting)}
+        </p>
+      )}
+
+      {queuedId && !result ? (
+        <section aria-live="polite" className="saved">
+          <div className="result">
+            <span className="saved-icon" aria-hidden>⇡</span>
+            <div>
+              <p className="hint">{flushing ? t.sendingSaved : t.waitingSignal}</p>
+              <h2>{t.savedTitle}</h2>
+              <p>{t.savedBody}</p>
+            </div>
+          </div>
+          {local && (
+            <div className="preview" style={{ marginTop: 16 }}>
+              <img src={local.url} alt="" />
+            </div>
+          )}
+          <div className="row-actions">
+            <button className="btn btn-primary" onClick={flush} disabled={flushing}>{t.tryNow}</button>
+            <button className="btn" onClick={reset}>{t.another}</button>
+          </div>
+          <p className="safety">{t.safety}</p>
+        </section>
+      ) : result ? (
         <section aria-live="polite">
           <div className="result">
             <Gauge severity={result.severity} />
@@ -167,6 +288,7 @@ export default function ReportPage() {
                 {!result.duplicateOf && result.corroborations > 0 &&
                   (lang === "hi" ? `. ${result.corroborations} और लोगों ने यही बताया है।` : `. ${result.corroborations} other people reported this too.`)}
               </p>
+              {result.lat === null && <p className="hint">{t.pendingLocation}</p>}
             </div>
           </div>
           <div className="preview" style={{ marginTop: 16 }}>
@@ -180,15 +302,20 @@ export default function ReportPage() {
           <p className="lead">{t.reportLead}</p>
 
           <div className="field">
-            {upload && (
+            {upload ? (
               <div className="preview">
                 <img src={thumbUrl(upload, "normal", true)} alt="Selected photo, faces pixelated" />
               </div>
-            )}
+            ) : local && !uploading ? (
+              <div className="preview">
+                <img src={local.url} alt="Selected photo, saved on this phone" />
+              </div>
+            ) : null}
+            {offlineNote && <p className="hint offline-note" role="status">{t.photoSavedOffline}</p>}
             <div className="capture" aria-busy={uploading}>
               {/* capture="environment" opens the rear camera directly on phones */}
               <label className="btn btn-primary btn-capture" aria-disabled={uploading}>
-                {uploading ? t.uploading : upload ? t.retake : t.takePhoto}
+                {uploading ? t.uploading : upload || local ? t.retake : t.takePhoto}
                 <input type="file" accept="image/*" capture="environment" onChange={pick} disabled={uploading} />
               </label>
               <label className="btn" aria-disabled={uploading}>
@@ -211,18 +338,32 @@ export default function ReportPage() {
                 )}
                 {locState === "failed" && !loc && t.locationFailed}
                 {locState === "failed" && loc && <span className="num">{loc.lat.toFixed(4)}, {loc.lng.toFixed(4)}</span>}
+                {locState === "unknown" && t.noLocationNote}
               </span>
-              {locState !== "locating" && (
-                <button type="button" className="btn" style={{ minHeight: 38 }} onClick={locate}>{t.useLocation}</button>
-              )}
+              <span className="loc-actions">
+                {locState !== "locating" && (
+                  <button type="button" className="btn" onClick={locate}>{t.useLocation}</button>
+                )}
+                {locState !== "unknown" && locState !== "found" && (
+                  <button type="button" className="btn" onClick={() => setLocState("unknown")}>{t.dontKnow}</button>
+                )}
+              </span>
             </div>
             {locState === "failed" && (
               <div style={{ height: 240, marginTop: 10, borderRadius: 12, overflow: "hidden", border: "1px solid var(--line)" }}>
-                <MapView pin={loc} onPick={(lat, lng) => setLoc({ lat, lng })} />
+                <MapView pin={loc} onPick={(lat, lng) => setLoc({ lat, lng, source: "map_pin" })} />
               </div>
             )}
-            {locState === "failed" && <p className="hint">{lang === "hi" ? "नक़्शे पर अपनी जगह पर टैप करें।" : "Or tap your spot on the map."}</p>}
+            {locState === "failed" && <p className="hint">{t.tapMap}</p>}
           </div>
+
+          {(locState === "unknown" || (locState === "failed" && !loc)) && (
+            <div className="field">
+              <label htmlFor="place">{t.describePlace}</label>
+              <input id="place" type="text" value={place} onChange={(e) => setPlace(e.target.value)} placeholder={t.describePlaceholder} maxLength={200} />
+              <p className="hint">{t.describePlaceHint}</p>
+            </div>
+          )}
 
           <div className="field">
             <label htmlFor="note">{t.noteLabel}</label>

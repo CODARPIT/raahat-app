@@ -10,8 +10,8 @@ config({ path: ".env.local" });
 interface SeedItem {
   file?: string;
   url?: string;
-  lat: number;
-  lng: number;
+  lat?: number; // leave out to seed a "no location" report for the coordinator to pin
+  lng?: number;
   note: string;
   lang?: "en" | "hi";
 }
@@ -33,14 +33,15 @@ async function main() {
     const report = await triage({
       publicId: up.public_id,
       resourceType: up.resource_type === "video" ? "video" : "image",
-      lat: item.lat,
-      lng: item.lng,
+      lat: item.lat ?? null,
+      lng: item.lng ?? null,
+      locationSource: item.lat !== undefined && item.lng !== undefined ? "gps" : "missing",
       note: item.note,
       lang: item.lang ?? "en",
     });
     console.log(
       `${report.severity.padEnd(8)} ${String(report.score).padStart(3)}  ${report.primaryCategory.padEnd(20)} ` +
-        `${report.duplicateOf ? "duplicate " : ""}${report.aiMode}  ${source}`,
+        `${report.duplicateOf ? "duplicate " : ""}${report.lat === null ? "no-location " : ""}${report.aiMode}  ${source}`,
     );
   }
 }

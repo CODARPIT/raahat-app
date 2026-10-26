@@ -13,22 +13,23 @@ Built for **Hacktober HackDays 2026** (SheBuilds Delhi × MLH), Tech for Social 
 ## How one report flows
 
 ```
-Phone (Upload Widget: camera, on-device downscale, signed)
+Phone (camera, on-device downscale, signed)      WhatsApp (Twilio Sandbox: photo + location pin, any order)
+   │                                                 │  POST /api/whatsapp  (signature checked)
+   ▼                                                 ▼
+Cloudinary asset  ── tag raahat_report  ◄──── upload_stream (Twilio media needs auth)
    │
-   ▼
-Cloudinary asset  ── tag raahat_report
-   │
-   ▼  POST /api/reports
+   ▼  POST /api/reports  (location optional; EXIF GPS used if present)
 Triage pipeline (Next.js route)
    ├─ Admin API resource(phash)        → perceptual hash for duplicate detection
-   ├─ AI Vision  ai_vision_tagging     → 10-category disaster taxonomy
-   ├─ AI Vision  ai_vision_general     → people, danger, water depth, authenticity, EN + HI summary (JSON)
+   ├─ AI Vision  ai_vision_tagging     → 14-category disaster taxonomy (two batches of ≤10)
+   ├─ AI Vision  ai_vision_general     → people, danger, water depth, authenticity, place names, EN + HI summary (JSON)
+   │     (each call has a timeout; on failure → labelled rule-based triage)
    │     (input image = e_improve + w_1024 derivative: better at night, fewer tokens)
    ├─ scoreReport()  matchReport()     → score 0–100, severity, duplicate / corroboration
    └─ Admin API update(context, tags)  → Cloudinary *is* the database
    │
    ▼
-Search API (tags=raahat_report)  →  Control room + public map
+Search API (tags=raahat_report) + in-memory cache  →  Control room + public map
    ├─ thumbnails  e_pixelate_faces / c_fill,g_auto / f_auto,q_auto:eco|low
    ├─ detail      e_improve:outdoor, e_sharpen
    ├─ video       so_2 still for AI,  e_preview:duration_4 clip for responders
@@ -68,18 +69,65 @@ npm test                       # triage, dedupe and parsing tests
 2. Optional: seed demo data through the real pipeline:
    `cp scripts/seed.example.json scripts/seed.json`, put photos you have rights to in `seed-images/`, then `npm run seed`.
 3. Deploy: push to GitHub, import into Vercel, add the same env vars.
+4. Optional, WhatsApp intake (free Twilio trial, no card): Twilio Console → Messaging → Try it out →
+   Send a WhatsApp message. Set "When a message comes in" to `https://<your-app>/api/whatsapp` (HTTP POST),
+   and set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_WHATSAPP_FROM`. Add `TWILIO_SANDBOX_JOIN`
+   (e.g. `join silver-tiger`) to show the join steps on the landing page. If a proxy rewrites the request URL,
+   set `TWILIO_WEBHOOK_URL` to the exact webhook URL so Twilio's signature still checks out.
+   Citizens send a photo and a location pin in either order; the pending half is kept in Cloudinary for an hour.
 
-Pages: `/` overview · `/report` citizen reporting (Hindi/English) · `/map` public map (faces pixelated, locations rounded to ~110 m, notes hidden) · `/respond` control room (passcode).
+Pages and endpoints: `/` overview · `/report` citizen reporting (Hindi/English) · `/map` public map (faces pixelated, locations rounded to ~110 m, notes hidden) · `/respond` control room (passcode) ·
+`/api/health` pre-demo check (Cloudinary reachable, AI mode, AI quota, cache size) · `/api/whatsapp` Twilio webhook.
+
+## Reports without a location
+
+WhatsApp strips GPS from forwarded photos, and people in a flood often can't find themselves on a map.
+Such reports are **never dropped**: Raahat uses EXIF GPS if the photo still has it, asks WhatsApp reporters for a
+location pin, and collects place hints from the note ("near Gandhi School", "मंदिर के पास"), the reporter's
+"describe the place" field and signs the AI reads in the photo. In the control room the "Needs location" filter
+lists them; a coordinator clicks **Pin location** and clicks the map. A Nominatim (OpenStreetMap) guess from the
+place hint is drawn as a dashed suggestion and is never confirmed automatically. Unlocated reports can still be
+merged as duplicates (by perceptual hash) but only corroborate other reports once they have a location.
 
 ## Scoring
 
 `score = category weight + 25% of secondary hazards + 30 if anyone is in danger + 1.5 per person (max 10)
 + water depth (ankle 2 … chest 22) + 5 if vehicles can't reach + 4 per independent corroborating report (max 5)`,
-×0.3 if the image looks fake or unrelated, capped at 100. Bands: critical ≥ 70, high ≥ 45, moderate ≥ 25.
-Weights live in `src/lib/triage.ts` and are covered by `tests/triage.test.ts`.
+×0.3 if there is any reason for human review, capped at 100 (15 if no emergency is seen). Bands: critical ≥ 70, high ≥ 45, moderate ≥ 25.
+
+The weights follow one rule: **threat to life first, then how fast the hazard spreads, then how much it blocks
+access to help** (trapped 40, fire / gas leak / crowd crush 35, collapse / landslide / medical 30, live wire / storm 25,
+flood 20, road blocked / relief 15, waterlogging 10). They are a starting point to tune with a real control room.
+Every point is shown in the control room under **"Why this score"**.
+
+Reasons for review: the AI flags screenshots, memes, drawings, photos of screens or unrelated images, and the
+photo's EXIF date is more than 7 days old ("Photo taken on 3 Jul 2017"). This catches some recycled photos,
+not every old photo. Weights live in `src/lib/triage.ts` and are covered by `tests/triage.test.ts`.
+
+## Demo checklist
+
+1. Open `/api/health`: `ok: true`, the AI mode you expect, AI quota not near zero.
+2. Warm the app: open `/`, `/report`, `/respond` once (first hits on serverless are slow).
+3. Seed data (`npm run seed`) so the map isn't empty.
+4. Rehearse the duplicate merge three times in a row: report a photo, then the same photo again.
+5. If AI Vision is slow or out of quota, set `RAAHAT_AI_MODE=demo`; reports are labelled "rule-based".
+6. Keep a recorded video of the full flow as a backup, and `npm start` locally as a second backup.
+
+## FAQ
+
+- **"Citizens won't open a website mid-flood."** They don't have to: they can report on WhatsApp. The web page is for volunteers and responders.
+- **"Forwarded photos have no location."** They're never dropped: we ask for a WhatsApp pin, use EXIF GPS if present, extract place names, and the coordinator pins the report on the map.
+- **"Isn't Cloudinary-as-database fragile?"** Cloudinary is the system of record; an in-memory cache gives read-your-writes and absorbs Search rate limits (one retry, then "data may be a few seconds old"). Production would add Redis or Postgres.
+- **"AI Vision quota or latency?"** Every call has a timeout, with honestly labelled rule-based fallback; the quota is shown in the control room.
+- **"Does it detect old photos?"** It catches screenshots and memes and EXIF dates older than a week; not every old photo, and we say so.
+- **"Why is fire 35 and trapped 40?"** Threat to life first, then spread, then access. Every point is visible under "Why this score" and meant to be tuned with a coordinator.
 
 ## Known limits
 
 - Originals are delivered as public (unguessable) URLs; production should upload as `authenticated` and sign delivery URLs.
 - One shared responder passcode; production needs per-responder accounts and an audit log.
+- The read-your-writes cache lives in memory, so it is only consistent within one server instance. On Vercel,
+  instances don't share memory; a production version would use Redis. (WhatsApp's photo/location pairing is stored
+  in Cloudinary, so it works across instances.)
+- A WhatsApp photo is filed once its location pin arrives; a photo whose pin never comes stays pending for an hour.
 - AI output can be wrong. Raahat ranks, it never discards: every report stays visible to a human.

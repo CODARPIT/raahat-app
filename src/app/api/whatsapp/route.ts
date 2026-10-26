@@ -75,8 +75,11 @@ async function fileReport(
     resourceType: photo.resourceType,
     lat: loc.lat,
     lng: loc.lng,
+    locationSource: "whatsapp_pin",
     note: photo.note.slice(0, 500),
     lang,
+    channel: "whatsapp",
+    reporterHash: key, // salted hash of the number, never the number itself
   });
   await sendWhatsApp(
     to,

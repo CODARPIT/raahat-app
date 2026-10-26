@@ -2,7 +2,10 @@
 // one original upload, generated on the CDN edge the first time it's requested.
 // Safe to import on client and server.
 
+import { CATEGORY_LABEL } from "./labels";
 import type { Report, Severity } from "./types";
+
+export { CATEGORY_LABEL };
 
 const CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "demo";
 
@@ -71,30 +74,14 @@ export const SEVERITY_HEX: Record<Severity, string> = {
   low: "6E7F7A",
 };
 
-export const CATEGORY_LABEL: Record<string, string> = {
-  trapped_or_injured: "People trapped or injured",
-  crowd_crush: "Crowd crush or stampede",
-  medical_emergency: "Medical emergency",
-  fire: "Fire",
-  gas_or_chemical_leak: "Gas or chemical leak",
-  structural_collapse: "Building damage",
-  storm_damage: "Storm or cyclone damage",
-  landslide: "Landslide",
-  electrical_hazard: "Live wire or electrical hazard",
-  flood: "Flooding",
-  road_blocked: "Road blocked",
-  relief_needed: "Food, water or shelter needed",
-  waterlogging: "Waterlogging",
-  no_emergency: "No emergency seen",
-};
-
 /**
  * A square, WhatsApp-ready alert built entirely by URL: faces pixelated, subject
  * smart-cropped, severity banner and summary composited as text layers.
  */
 export function alertCardUrl(r: Report) {
   const headline = `${r.severity.toUpperCase()}  ${CATEGORY_LABEL[r.primaryCategory] ?? ""}`;
-  const where = `${r.lat.toFixed(3)} N  ${r.lng.toFixed(3)} E   Raahat priority ${r.score}`;
+  const place = r.lat !== null && r.lng !== null ? `${r.lat.toFixed(3)} N  ${r.lng.toFixed(3)} E` : "Location pending";
+  const where = `${place}   Raahat priority ${r.score}`;
   const summary = r.summary.length > 140 ? r.summary.slice(0, 137) + "..." : r.summary;
   const chain = [
     PRIVACY,
