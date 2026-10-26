@@ -1,0 +1,10 @@
+[
+  { "file": "seed-images/roof-rescue.jpg", "lat": 26.1445, "lng": 91.7362, "note": "Two families on the roof of the primary school, water up to the chest", "lang": "en" },
+  { "file": "seed-images/roof-rescue-forwarded.jpg", "lat": 26.1502, "lng": 91.7400, "note": "forwarded, please help", "lang": "en" },
+  { "file": "seed-images/live-wire.jpg", "lat": 26.1461, "lng": 91.7371, "note": "बिजली का तार पानी में गिरा है, करंट का ख़तरा", "lang": "hi" },
+  { "file": "seed-images/flooded-street.jpg", "lat": 26.1449, "lng": 91.7366, "note": "Whole lane flooded, knee deep", "lang": "en" },
+  { "file": "seed-images/fallen-tree.jpg", "lat": 28.6304, "lng": 77.2177, "note": "Big tree fell across the road, ambulance can't pass", "lang": "en" },
+  { "file": "seed-images/relief-queue.jpg", "lat": 26.1580, "lng": 91.7700, "note": "Around 40 people at the camp, no drinking water since morning", "lang": "en" },
+  { "file": "seed-images/waterlogging.jpg", "lat": 28.5355, "lng": 77.3910, "note": "नाली भर गई, सड़क पर जलभराव", "lang": "hi" },
+  { "file": "seed-images/meme.jpg", "lat": 28.6139, "lng": 77.2090, "note": "lol", "lang": "en" }
+]

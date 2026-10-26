@@ -1,0 +1,53 @@
+export type Lang = "en" | "hi";
+
+export const T = {
+  en: {
+    reportTitle: "Report what you see",
+    reportLead: "One photo and your location. Responders see it in under a minute, with faces blurred.",
+    takePhoto: "Take or choose a photo",
+    retake: "Change photo",
+    uploading: "Uploading…",
+    location: "Location",
+    locating: "Finding your location…",
+    locationFound: "Location found",
+    locationFailed: "Couldn't get your location. Turn on GPS, or type the nearest landmark below and a responder will place it.",
+    useLocation: "Use my location",
+    noteLabel: "What is happening? (optional)",
+    notePlaceholder: "e.g. Water up to the waist, 2 families on the roof of the school",
+    send: "Send report",
+    sending: "Sending to responders…",
+    sent: "Report sent",
+    priority: "Priority",
+    another: "Report something else",
+    safety: "If someone's life is in danger, also call 112.",
+    needPhoto: "Add a photo first.",
+    needLocation: "Add your location first.",
+  },
+  hi: {
+    reportTitle: "जो दिख रहा है, बताइए",
+    reportLead: "एक फ़ोटो और आपकी लोकेशन। एक मिनट से कम में राहत दल तक पहुँचेगी, चेहरे धुंधले करके।",
+    takePhoto: "फ़ोटो लें या चुनें",
+    retake: "फ़ोटो बदलें",
+    uploading: "अपलोड हो रही है…",
+    location: "लोकेशन",
+    locating: "आपकी लोकेशन ढूँढ रहे हैं…",
+    locationFound: "लोकेशन मिल गई",
+    locationFailed: "लोकेशन नहीं मिली। GPS चालू करें, या नीचे सबसे पास की पहचान वाली जगह लिखें।",
+    useLocation: "मेरी लोकेशन लें",
+    noteLabel: "क्या हो रहा है? (वैकल्पिक)",
+    notePlaceholder: "जैसे: कमर तक पानी, स्कूल की छत पर 2 परिवार फँसे हैं",
+    send: "रिपोर्ट भेजें",
+    sending: "राहत दल को भेज रहे हैं…",
+    sent: "रिपोर्ट भेज दी गई",
+    priority: "प्राथमिकता",
+    another: "कुछ और रिपोर्ट करें",
+    safety: "अगर किसी की जान ख़तरे में है, तो 112 पर भी कॉल करें।",
+    needPhoto: "पहले फ़ोटो जोड़ें।",
+    needLocation: "पहले लोकेशन जोड़ें।",
+  },
+} as const;
+
+export const SEVERITY_LABEL = {
+  en: { critical: "Critical", high: "High", moderate: "Moderate", low: "Low" },
+  hi: { critical: "अति गंभीर", high: "गंभीर", moderate: "मध्यम", low: "कम" },
+} as const;
