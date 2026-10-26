@@ -2,6 +2,7 @@
 // active, how much AI Vision quota is left, and how warm is this instance's cache.
 
 import { NextResponse } from "next/server";
+import { controlRoomOpen } from "@/lib/auth";
 import { cloudinary } from "@/lib/cloudinary";
 import { cacheSize } from "@/lib/reports";
 import { aiMode, getAiQuota } from "@/lib/vision";
@@ -27,6 +28,7 @@ export async function GET() {
       aiTimeoutMs: Number(process.env.RAAHAT_AI_TIMEOUT_MS) || 15000,
       aiQuota: quota ?? "unknown until the first live AI call",
       responderPasscodeSet: Boolean(process.env.RESPONDER_PASSCODE),
+      controlRoomOpen: controlRoomOpen(),
       cacheSize: cacheSize(),
       time: new Date().toISOString(),
     },

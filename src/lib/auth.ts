@@ -10,7 +10,12 @@ export function passcodeToken(passcode: string) {
   return createHash("sha256").update(`raahat:${passcode}`).digest("hex");
 }
 
+// Open for judging: everyone gets the control room without a passcode.
+// Set RAAHAT_CONTROL_ROOM_LOCKED=1 to bring the passcode back.
+export const controlRoomOpen = () => process.env.RAAHAT_CONTROL_ROOM_LOCKED !== "1";
+
 export async function isResponder(): Promise<boolean> {
+  if (controlRoomOpen()) return true;
   const expected = process.env.RESPONDER_PASSCODE;
   if (!expected) return false;
   const jar = await cookies();
