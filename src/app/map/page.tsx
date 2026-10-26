@@ -1,6 +1,6 @@
 import OpsBoard from "@/components/OpsBoard";
 
-export const metadata = { title: "Live map | Raahat" };
+export const metadata = { title: "Live situation map" };
 
 /** Public situation map: verified-looking reports only, faces pixelated, locations rounded. */
 export default function MapPage() {

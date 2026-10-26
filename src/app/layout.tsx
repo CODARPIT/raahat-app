@@ -16,9 +16,16 @@ const mukta = Mukta({
   display: "swap",
 });
 
+const SITE_URL = process.env.PUBLIC_BASE_URL ?? "https://raahat-kappa.vercel.app";
+const DESCRIPTION = "Citizen disaster reports, triaged by Cloudinary AI and delivered to responders on any network.";
+
 export const metadata: Metadata = {
-  title: "Raahat",
-  description: "Citizen disaster reports, triaged by Cloudinary AI and delivered to responders on any network.",
+  metadataBase: new URL(SITE_URL),
+  title: { default: "Raahat: disaster report triage", template: "%s | Raahat" },
+  description: DESCRIPTION,
+  applicationName: "Raahat",
+  openGraph: { type: "website", siteName: "Raahat", locale: "en_IN", title: "Raahat: disaster report triage", description: DESCRIPTION },
+  twitter: { card: "summary_large_image", title: "Raahat: disaster report triage", description: DESCRIPTION },
 };
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#13272c" };
