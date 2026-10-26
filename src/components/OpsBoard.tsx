@@ -265,6 +265,12 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
   return (
     <main className="ops">
       <section className="ops-queue" aria-label="Reports, highest priority first">
+        {mode === "public" && (
+          <p className="public-note">
+            <strong>Public view.</strong> Locations are approximate (about 110 m), faces are pixelated and reporters&rsquo; notes
+            are hidden. Reports still under review are not shown.
+          </p>
+        )}
         <div className="ops-bar">
           <strong className="num">{queue.length} open</strong>
           {fresh.size > 0 && <span className="pill pill-new num" role="status">{fresh.size} new</span>}

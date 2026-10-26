@@ -306,8 +306,6 @@ html[data-text="lg"] { font-size: 115%; }
 .hi { font-size: 1rem; color: var(--ink-soft); }
 .empty { padding: 32px 16px; color: var(--ink-soft); }
 
-.gate { max-width: 420px; margin: 12vh auto; padding: 0 var(--gutter); }
-.gate h1 { font-size: 2rem; margin: 0 0 8px; }
 
 @media (max-width: 900px) {
   .ops { grid-template-columns: 1fr; height: auto; }
@@ -490,3 +488,21 @@ kbd {
   .banner .actions .btn { flex: 1 1 100%; }
   .notice-inner { flex-direction: column; gap: 6px; }
 }
+
+/* ── Phase 4: sign-in card, public-map note, breadcrumbs ── */
+.gate { max-width: 520px; margin: clamp(28px, 8vh, 80px) auto; padding: 0 var(--gutter); }
+.gate-card { background: var(--paper); border: 1px solid var(--line); border-top: 4px solid var(--chrome); border-radius: var(--r-md); padding: 28px; box-shadow: 0 10px 28px rgb(0 0 0 / 0.06); }
+.gate-head { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; }
+.gate-lock { width: 48px; height: 48px; border-radius: 50%; display: grid; place-items: center; background: var(--chrome); color: var(--chrome-ink); flex: none; }
+.gate-kicker { margin: 0; font-size: 0.8125rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--sev-critical); }
+.gate h1 { font-size: 1.75rem; margin: 2px 0 0; }
+.gate-submit { width: 100%; }
+.gate-help { margin: 20px 0 0; padding: 16px 0 0 18px; border-top: 1px solid var(--line); font-size: 0.875rem; color: var(--ink-soft); display: grid; gap: 6px; }
+.gate-help a { color: var(--teal); font-weight: 700; }
+
+.public-note { margin: 0; padding: 10px 16px; font-size: 0.875rem; background: color-mix(in srgb, var(--teal) 10%, var(--paper)); border-bottom: 1px solid var(--line); }
+
+.crumbs { margin: 0 0 16px; font-size: 0.875rem; }
+.crumbs ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; color: var(--ink-soft); }
+.crumbs li + li::before { content: "›"; margin-right: 6px; }
+.crumbs a { color: var(--teal); font-weight: 600; }

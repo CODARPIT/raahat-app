@@ -234,6 +234,12 @@ export default function ReportPage() {
 
   return (
     <main className="report-page" lang={lang}>
+      <nav className="crumbs" aria-label="Breadcrumb">
+        <ol>
+          <li><a href="/">{lang === "hi" ? "होम" : "Home"}</a></li>
+          <li aria-current="page">{lang === "hi" ? "घटना की रिपोर्ट करें" : "Report an incident"}</li>
+        </ol>
+      </nav>
       <div className="lang-toggle" role="group" aria-label="Language">
         <button aria-pressed={lang === "en"} onClick={() => setLang("en")}>English</button>
         <button aria-pressed={lang === "hi"} onClick={() => setLang("hi")} lang="hi">हिंदी</button>
