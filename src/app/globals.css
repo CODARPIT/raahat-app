@@ -270,3 +270,6 @@ button, input, textarea { font: inherit; color: inherit; }
   .site-nav a { white-space: nowrap; }
   .hero .actions .btn { flex: 1 1 100%; }
 }
+
+.wa .lead { color: var(--ink-soft); margin: -12px 0 24px; }
+.wa a { text-underline-offset: 3px; }

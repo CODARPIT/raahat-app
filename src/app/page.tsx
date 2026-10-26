@@ -12,6 +12,10 @@ const BANDS: { sev: Severity; label: string; color: string }[] = [
 ];
 
 export default async function Home() {
+  const whatsapp =
+    process.env.TWILIO_WHATSAPP_NUMBER && process.env.TWILIO_SANDBOX_JOIN
+      ? { number: process.env.TWILIO_WHATSAPP_NUMBER, join: process.env.TWILIO_SANDBOX_JOIN }
+      : null;
   let counts: Record<Severity, number> = { critical: 0, high: 0, moderate: 0, low: 0 };
   try {
     const open = (await listReports()).filter((r) => !r.duplicateOf && r.status !== "resolved" && r.status !== "rejected");
@@ -76,6 +80,36 @@ export default async function Home() {
           </li>
         </ol>
       </section>
+
+      {whatsapp && (
+        <section className="flow wa" aria-labelledby="wa-h">
+          <h2 id="wa-h">Report on WhatsApp</h2>
+          <p className="lead">No app, no website. Send a photo the way you already do.</p>
+          <ol>
+            <li>
+              <h3>Join once</h3>
+              <p>
+                Message <strong className="num">{whatsapp.join}</strong> to{" "}
+                <a href={`https://wa.me/${whatsapp.number.replace(/\D/g, "")}?text=${encodeURIComponent(whatsapp.join)}`}>
+                  <strong className="num">{whatsapp.number}</strong>
+                </a>.
+              </p>
+            </li>
+            <li>
+              <h3>Send a photo</h3>
+              <p>Add a caption if you can: what is happening, how many people. Hindi or English.</p>
+            </li>
+            <li>
+              <h3>Share your location</h3>
+              <p>📎 → Location. No pin? Your report still reaches the control room, who will place it.</p>
+            </li>
+            <li>
+              <h3>Get a reply</h3>
+              <p>Raahat answers with the priority it assigned. If life is in danger, also call 112.</p>
+            </li>
+          </ol>
+        </section>
+      )}
     </main>
   );
 }

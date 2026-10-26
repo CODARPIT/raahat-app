@@ -25,7 +25,7 @@ import {
   type WaterDepth,
 } from "./types";
 
-import { REPORT_TAG } from "./constants";
+import { REPORT_FOLDER, REPORT_TAG } from "./constants";
 export { REPORT_TAG };
 
 type Ctx = Record<string, string>;
@@ -391,14 +391,21 @@ export async function setStatus(publicId: string, resourceType: "image" | "video
 }
 
 /**
- * A coordinator places a report on the map. The first time a report gets a location
- * it can also corroborate nearby reports of the same incident (and be corroborated by
- * them); moving the pin later only moves the pin, so nothing is counted twice.
+ * A coordinator (or the reporter, with a WhatsApp location pin) places a report on the
+ * map. The first time a report gets a location it can also corroborate nearby reports
+ * of the same incident (and be corroborated by them); moving the pin later only moves
+ * the pin, so nothing is counted twice.
  */
-export async function setLocation(publicId: string, resourceType: "image" | "video", lat: number, lng: number): Promise<Report> {
+export async function setLocation(
+  publicId: string,
+  resourceType: "image" | "video",
+  lat: number,
+  lng: number,
+  source: Extract<LocationSource, "coordinator" | "whatsapp_pin"> = "coordinator",
+): Promise<Report> {
   const target = await getReport(publicId, resourceType);
   const firstLocation = target.lat === null;
-  const located: Report = { ...target, lat, lng, locationSource: "coordinator" };
+  const located: Report = { ...target, lat, lng, locationSource: source };
   if (!firstLocation || target.duplicateOf) return save(located);
 
   const existing = await listReports();
@@ -409,4 +416,45 @@ export async function setLocation(publicId: string, resourceType: "image" | "vid
   const saved = await save({ ...located, corroborations: target.corroborations + match.corroborates.length });
   await bump(existing.filter((r) => match.corroborates.includes(r.publicId)));
   return saved;
+}
+
+// ── WhatsApp intake ──────────────────────────────────────────────────────────
+
+/** Upload media fetched from Twilio (it needs auth, so Cloudinary can't fetch it by URL). */
+export function uploadBuffer(bytes: Buffer, resourceType: "image" | "video"): Promise<{ publicId: string; resourceType: "image" | "video" }> {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: REPORT_FOLDER, tags: [REPORT_TAG, "ch_whatsapp"], resource_type: resourceType },
+      (err, res) => {
+        if (err || !res) return reject(err ?? new Error("Upload failed."));
+        resolve({ publicId: res.public_id, resourceType: res.resource_type === "video" ? "video" : "image" });
+      },
+    );
+    stream.end(bytes);
+  });
+}
+
+// A WhatsApp photo arrives first and its location pin a little later, as a separate
+// message. Remember which report each reporter is still expected to locate.
+const AWAIT_MS = 30 * 60_000;
+const awaiting = new Map<string, { publicId: string; resourceType: "image" | "video"; at: number }>();
+
+export function expectLocation(reporter: string, publicId: string, resourceType: "image" | "video") {
+  awaiting.set(reporter, { publicId, resourceType, at: Date.now() });
+  for (const [k, v] of awaiting) if (Date.now() - v.at > AWAIT_MS) awaiting.delete(k);
+}
+
+/** This reporter's latest unlocated report from the last 30 min, from memory or (other instance) Search. */
+export async function awaitingReport(reporter: string): Promise<{ publicId: string; resourceType: "image" | "video" } | null> {
+  const mem = awaiting.get(reporter);
+  if (mem && Date.now() - mem.at <= AWAIT_MS) return mem;
+  const cutoff = Date.now() - AWAIT_MS;
+  const mine = (await listReports())
+    .filter((r) => r.reporterHash === reporter && r.lat === null && Date.parse(r.createdAt) >= cutoff)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))[0];
+  return mine ? { publicId: mine.publicId, resourceType: mine.resourceType } : null;
+}
+
+export function forgetAwaiting(reporter: string) {
+  awaiting.delete(reporter);
 }
