@@ -2,6 +2,8 @@
 
 **Citizen disaster reports, triaged by Cloudinary AI, delivered to responders on any network.**
 
+**Live demo:** https://raahat-kappa.vercel.app · [report](https://raahat-kappa.vercel.app/report) · [public map](https://raahat-kappa.vercel.app/map) · [control room](https://raahat-kappa.vercel.app/respond) (passcode required)
+
 During Indian floods, control rooms are buried under thousands of forwarded WhatsApp photos with no location,
 no priority and many duplicates. Raahat turns each photo into a ranked, de-duplicated, privacy-safe report on a
 live map, in under a minute, and it loads on a 2G connection.
