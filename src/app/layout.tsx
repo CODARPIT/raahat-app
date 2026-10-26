@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Mukta } from "next/font/google";
 import Link from "next/link";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { THEME_KEY } from "@/lib/constants";
 import "./globals.css";
 
 // Mukta (Ek Type, Mumbai) carries Latin and Devanagari in one family,
@@ -21,7 +23,15 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, them
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={mukta.variable}>
+    <html lang="en" className={mukta.variable} suppressHydrationWarning>
+      <head>
+        {/* Apply a saved light/dark choice before first paint. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem("${THEME_KEY}");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`,
+          }}
+        />
+      </head>
       <body>
         <header className="site-header">
           <Link href="/" className="wordmark">
@@ -34,6 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/report">Report</Link>
             <Link href="/map">Live map</Link>
             <Link href="/respond">Control room</Link>
+            <ThemeToggle />
           </nav>
         </header>
         {children}

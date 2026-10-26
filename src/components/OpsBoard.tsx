@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gauge } from "@/components/Gauge";
 import {
   alertCardUrl,
@@ -24,6 +24,25 @@ const NEXT_STATUS: { status: Status; label: string }[] = [
   { status: "rejected", label: "Reject as false" },
 ];
 const LOW_QUOTA = 50;
+
+/** Single-key shortcuts for a coordinator working through a long queue. */
+const SHORTCUTS: { keys: string; action: string; responderOnly?: boolean }[] = [
+  { keys: "J / K", action: "Next / previous report" },
+  { keys: "Esc", action: "Close the report (or cancel pinning)" },
+  { keys: "V", action: "Mark verified", responderOnly: true },
+  { keys: "D", action: "Team dispatched", responderOnly: true },
+  { keys: "R", action: "Resolved", responderOnly: true },
+  { keys: "X", action: "Reject as false", responderOnly: true },
+  { keys: "P", action: "Pin or move the location", responderOnly: true },
+  { keys: "F", action: "Show or pixelate faces", responderOnly: true },
+  { keys: "?", action: "Show these shortcuts" },
+];
+const STATUS_KEYS: Record<string, Status> = { v: "verified", d: "dispatched", r: "resolved", x: "rejected" };
+
+function isTyping(el: EventTarget | null) {
+  const t = el as HTMLElement | null;
+  return !!t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
+}
 
 interface AiInfo {
   mode: "live" | "demo" | "auto";
@@ -65,13 +84,26 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
   const [busy, setBusy] = useState(false);
   const [pinning, setPinning] = useState(false);
   const [suggestion, setSuggestion] = useState<Suggestion | null>(null);
+  // Reports that arrived since the board opened and nobody has looked at yet.
+  const [fresh, setFresh] = useState<Set<string>>(new Set());
+  const seen = useRef<Set<string> | null>(null);
+  const helpRef = useRef<HTMLDialogElement>(null);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch("/api/reports", { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Couldn't load reports.");
-      setReports(data.reports as Report[]);
+      const list = data.reports as Report[];
+      setReports(list);
+      if (seen.current === null) {
+        seen.current = new Set(list.map((r) => r.publicId));
+      } else {
+        const known = seen.current;
+        const arrived = list.filter((r) => !r.duplicateOf && !known.has(r.publicId)).map((r) => r.publicId);
+        list.forEach((r) => known.add(r.publicId));
+        if (arrived.length) setFresh((f) => new Set([...f, ...arrived]));
+      }
       setStale(Boolean(data.stale));
       setAi((data.ai as AiInfo | undefined) ?? null);
       setError(null);
@@ -140,14 +172,22 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
 
   useEffect(() => {
     setPinning(false);
+    if (!selectedId) return;
+    setFresh((f) => {
+      if (!f.has(selectedId)) return f;
+      const next = new Set(f);
+      next.delete(selectedId);
+      return next;
+    });
+    document.querySelector(`[data-report="${CSS.escape(selectedId)}"]`)?.scrollIntoView({ block: "nearest" });
   }, [selectedId]);
 
+  // "(2) Control room" in the tab, so a coordinator on another tab sees new reports arrive.
   useEffect(() => {
-    if (!pinning) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setPinning(false);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [pinning]);
+    if (mode !== "responder") return;
+    const base = "Control room | Raahat";
+    document.title = fresh.size ? `(${fresh.size}) ${base}` : base;
+  }, [fresh, mode]);
 
   const savings = useMemo(() => {
     const measured = reports.filter((r) => r.thumbBytes > 0 && r.originalBytes > 0);
@@ -185,6 +225,39 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
     }
   }
 
+  // Re-registered every render so the handler always sees the current queue and selection.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return;
+      const key = e.key.toLowerCase();
+      if (key === "?") {
+        const d = helpRef.current;
+        if (d?.open) d.close();
+        else d?.showModal();
+        return;
+      }
+      if (helpRef.current?.open) return; // the dialog handles its own Esc
+      if (key === "escape") {
+        if (pinning) setPinning(false);
+        else setSelectedId(null);
+        return;
+      }
+      if (key === "j" || key === "k") {
+        if (!queue.length) return;
+        const i = queue.findIndex((r) => r.publicId === selectedId);
+        const next = key === "j" ? Math.min(i + 1, queue.length - 1) : Math.max(i - 1, 0);
+        setSelectedId(queue[next].publicId);
+        return;
+      }
+      if (mode !== "responder" || !selected || busy) return;
+      if (STATUS_KEYS[key] && STATUS_KEYS[key] !== selected.status) patch({ status: STATUS_KEYS[key] });
+      else if (key === "p" && !selected.duplicateOf) setPinning((v) => !v);
+      else if (key === "f" && selected.resourceType === "image") setReveal((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   const blur = mode === "public" || !reveal;
   const quotaLow = ai?.quota && ai.quota.remaining < LOW_QUOTA;
 
@@ -193,6 +266,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
       <section className="ops-queue" aria-label="Reports, highest priority first">
         <div className="ops-bar">
           <strong className="num">{queue.length} open</strong>
+          {fresh.size > 0 && <span className="pill pill-new num" role="status">{fresh.size} new</span>}
           <span className="spacer" />
           <label>
             Show{" "}
@@ -211,6 +285,9 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
           )}
           <label><input type="checkbox" checked={hideClosed} onChange={(e) => setHideClosed(e.target.checked)} /> Hide closed</label>
           <label><input type="checkbox" checked={bw === "saver"} onChange={(e) => setBw(e.target.checked ? "saver" : "normal")} /> 2G mode</label>
+          <button type="button" className="linklike kbd-hint" onClick={() => helpRef.current?.showModal()} aria-keyshortcuts="?">
+            Shortcuts <kbd>?</kbd>
+          </button>
         </div>
         {mode === "responder" && ai && (
           <p className={`saving${quotaLow || ai.mode === "demo" ? " warn" : ""}`}>
@@ -238,8 +315,8 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
         )}
         <ul className="queue">
           {queue.map((r) => (
-            <li key={r.publicId}>
-              <button aria-current={r.publicId === selectedId} onClick={() => setSelectedId(r.publicId)}>
+            <li key={r.publicId} className={fresh.has(r.publicId) ? "is-new" : undefined}>
+              <button data-report={r.publicId} aria-current={r.publicId === selectedId} onClick={() => setSelectedId(r.publicId)}>
                 <Gauge severity={r.severity} />
                 <img src={thumbUrl(r, bw, true)} alt="" loading="lazy" width={96} height={72} />
                 <span className="meta">
@@ -249,6 +326,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                   </span>
                   <span className="sub">{r.summary}</span>
                   <span className="sub">
+                    {fresh.has(r.publicId) && <span className="pill pill-new">New</span>}{" "}
                     {!isLocated(r) && <span className="pill pill-warn">No location</span>}{" "}
                     {r.channel === "whatsapp" && <span className="pill">WhatsApp</span>}{" "}
                     {ago(r.createdAt)}
@@ -284,6 +362,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
 
         {selected && (
           <article className="detail" aria-label="Selected report">
+            <button type="button" className="detail-close" onClick={() => setSelectedId(null)} aria-label="Close report" title="Close (Esc)">×</button>
             <div>
               <p className="hint">
                 <span className="sev sev-text" data-sev={selected.severity}>{selected.severity}, score {selected.score}</span>{" "}
@@ -386,6 +465,24 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
           </article>
         )}
       </section>
+
+      <dialog
+        ref={helpRef}
+        className="shortcuts"
+        aria-labelledby="shortcuts-h"
+        onClick={(e) => e.target === e.currentTarget && helpRef.current?.close()}
+      >
+        <h2 id="shortcuts-h">Keyboard shortcuts</h2>
+        <dl>
+          {SHORTCUTS.filter((s) => mode === "responder" || !s.responderOnly).map((s) => (
+            <div key={s.keys}>
+              <dt><kbd>{s.keys}</kbd></dt>
+              <dd>{s.action}</dd>
+            </div>
+          ))}
+        </dl>
+        <form method="dialog"><button className="btn">Close</button></form>
+      </dialog>
     </main>
   );
 }

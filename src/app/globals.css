@@ -39,6 +39,26 @@
     color-scheme: dark;
   }
 }
+/* Same dark tokens when someone picks dark mode explicitly. */
+:root[data-theme="dark"] {
+  --mist: #0e1c20;
+  --paper: #15272c;
+  --ink: #e3ecea;
+  --ink-soft: #9db0ae;
+  --line: #2a3f43;
+  --teal: #4fb3a9;
+  --teal-ink: #08201e;
+  --sev-critical: #ff5a6e;
+  --sev-high: #f2b33d;
+  --sev-moderate: #7fb0c8;
+  --sev-low: #8fa09c;
+  color-scheme: dark;
+}
+/* Dark map tiles: invert OpenStreetMap so the map doesn't glare in a dark control room. */
+:root[data-theme="dark"] .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(0.95) contrast(0.9); }
+}
 
 * { box-sizing: border-box; }
 html, body { margin: 0; }
@@ -273,3 +293,45 @@ button, input, textarea { font: inherit; color: inherit; }
 
 .wa .lead { color: var(--ink-soft); margin: -12px 0 24px; }
 .wa a { text-underline-offset: 3px; }
+
+/* ── Phase 1: control room polish ───────────────────── */
+.pill-new { color: var(--teal); }
+.queue li.is-new button { box-shadow: inset 3px 0 0 var(--focus); }
+.queue li.is-new button[aria-current="true"] { box-shadow: inset 3px 0 0 var(--teal); }
+@media (prefers-reduced-motion: no-preference) {
+  .queue li.is-new { animation: arrive 1.6s ease-out 2; }
+}
+@keyframes arrive { 0% { background: color-mix(in srgb, var(--focus) 28%, transparent); } 100% { background: transparent; } }
+
+kbd {
+  display: inline-block; min-width: 1.6em; padding: 0 6px; border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 4px; background: var(--paper); font: 600 13px/1.6 var(--font-mukta), system-ui, sans-serif; text-align: center;
+}
+.kbd-hint { font-size: 14px; font-weight: 600; color: var(--ink-soft); text-decoration: none; display: inline-flex; gap: 6px; align-items: center; }
+.kbd-hint:hover { color: var(--ink); }
+@media (hover: none) { .kbd-hint { display: none; } } /* no keyboard on phones */
+
+.detail { position: relative; }
+.detail-close {
+  position: absolute; top: 10px; right: 12px; width: 36px; height: 36px; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--paper); font-size: 22px; line-height: 1; cursor: pointer; color: var(--ink-soft);
+}
+.detail-close:hover { color: var(--ink); border-color: var(--ink); }
+.detail > div:first-of-type h2, .detail .hint:first-child { padding-right: 44px; }
+
+.shortcuts {
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--paper); color: var(--ink);
+  padding: 22px 24px; width: min(420px, calc(100vw - 32px));
+}
+.shortcuts::backdrop { background: rgb(0 0 0 / 0.45); }
+.shortcuts h2 { margin: 0 0 12px; font-size: 22px; }
+.shortcuts dl { margin: 0 0 16px; display: grid; gap: 6px; }
+.shortcuts dl > div { display: grid; grid-template-columns: 76px 1fr; gap: 12px; align-items: center; }
+.shortcuts dt, .shortcuts dd { margin: 0; }
+
+.site-nav { align-items: center; }
+.theme-toggle {
+  width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); background: transparent;
+  cursor: pointer; font-size: 17px; line-height: 1; color: var(--ink-soft); flex: none;
+}
+.theme-toggle:hover { color: var(--ink); border-color: var(--ink); }
