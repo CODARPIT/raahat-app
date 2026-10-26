@@ -111,23 +111,52 @@ function toTags(r: Report): string[] {
   ];
 }
 
+// Search is eventually consistent and rate-limited, so each server instance
+// remembers what it just wrote: fresh writes override a lagging index, and if
+// Search fails outright the queue is served from here instead of going blank.
+const recent = new Map<string, { report: Report; at: number }>();
+const FRESH_MS = 2 * 60_000;
+const RECENT_MAX = 500;
+
+function remember(r: Report) {
+  recent.delete(r.publicId);
+  recent.set(r.publicId, { report: r, at: Date.now() });
+  if (recent.size > RECENT_MAX) recent.delete(recent.keys().next().value!);
+}
+
 async function save(r: Report) {
   await cloudinary.api.update(r.publicId, {
     resource_type: r.resourceType,
     context: toContext(r),
     tags: toTags(r).join(","),
   } as Record<string, unknown>);
+  remember(r);
 }
 
 export async function listReports(limit = 200): Promise<Report[]> {
-  const res = (await cloudinary.search
-    .expression(`tags=${REPORT_TAG}`)
-    .with_field("context")
-    .with_field("tags")
-    .sort_by("created_at", "desc")
-    .max_results(Math.min(limit, 500))
-    .execute()) as { resources: CldResource[] };
-  return res.resources.map(toReport).filter((r): r is Report => r !== null);
+  let found: Report[];
+  let searchOk = true;
+  try {
+    const res = (await cloudinary.search
+      .expression(`tags=${REPORT_TAG}`)
+      .with_field("context")
+      .with_field("tags")
+      .sort_by("created_at", "desc")
+      .max_results(Math.min(limit, 500))
+      .execute()) as { resources: CldResource[] };
+    found = res.resources.map(toReport).filter((r): r is Report => r !== null);
+  } catch (err) {
+    if (recent.size === 0) throw err;
+    console.warn("[raahat] Search unavailable, serving recently saved reports:", (err as Error).message);
+    found = [];
+    searchOk = false;
+  }
+  const byId = new Map(found.map((r) => [r.publicId, r]));
+  const now = Date.now();
+  for (const { report, at } of recent.values()) {
+    if (!searchOk || now - at < FRESH_MS) byId.set(report.publicId, report);
+  }
+  return [...byId.values()].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, limit);
 }
 
 function findingsOf(r: Report): VisionFindings {
