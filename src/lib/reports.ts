@@ -181,7 +181,9 @@ export async function triage(input: TriageInput): Promise<Report> {
 
   const createdAt = asset.created_at;
   const firstPass = scoreReport({ findings, corroborations: 0 });
-  const candidates: Candidate[] = existing.map((r) => ({
+  // Closed reports are hidden from the board, so never merge new ones into them.
+  const open = existing.filter((r) => r.status !== "rejected" && r.status !== "resolved");
+  const candidates: Candidate[] = open.map((r) => ({
     publicId: r.publicId,
     lat: r.lat,
     lng: r.lng,
