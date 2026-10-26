@@ -1,12 +1,17 @@
+import { errorMessage } from "@/lib/errors";
 import { NextResponse } from "next/server";
 import { isResponder } from "@/lib/auth";
 import { coarsen } from "@/lib/triage";
 import { listReportsDetailed, setLocation, setStatus, triage } from "@/lib/reports";
+import { clientIp, createLimiter, tooMany } from "@/lib/rate-limit";
 import { aiMode, getAiQuota } from "@/lib/vision";
 import { isLocated, type LocationSource, type Report, type Status } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // AI Vision + dedupe can take a few seconds
+
+// Each filed report costs AI Vision quota, so one address can file at most 10 a minute.
+const fileLimit = createLimiter({ max: 10, windowMs: 60_000 });
 
 /**
  * Public view: no note, place hint, hashes or review reasons, location rounded to
@@ -22,6 +27,7 @@ function publicView(r: Report): Report {
     lng: r.lng === null ? null : coarsen(r.lng),
     phash: null,
     reporterHash: null,
+    history: [],
   };
 }
 
@@ -39,7 +45,7 @@ export async function GET() {
       reports: responder ? reports : reports.filter(isPublic).map(publicView),
     });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message, reports: [] }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(err), reports: [] }, { status: 500 });
   }
 }
 
@@ -47,6 +53,8 @@ const validLatLng = (lat: number, lng: number) =>
   Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
 
 export async function POST(req: Request) {
+  const rl = fileLimit(clientIp(req));
+  if (!rl.ok) return tooMany(rl.retryAfter, "Too many reports from this connection. Please wait a minute and send again.");
   const body = (await req.json()) as Partial<{
     publicId: string;
     resourceType: "image" | "video";
@@ -81,7 +89,7 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ report: publicView(report) });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }
 
@@ -113,6 +121,6 @@ export async function PATCH(req: Request) {
     }
     return NextResponse.json({ report: await setStatus(body.publicId, resourceType, body.status) });
   } catch (err) {
-    return NextResponse.json({ error: (err as Error).message }, { status: 500 });
+    return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
 }

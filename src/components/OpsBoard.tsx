@@ -11,6 +11,7 @@ import {
   videoPreviewUrl,
   type Bandwidth,
 } from "@/lib/cld-url";
+import { HISTORY_LABEL } from "@/lib/history";
 import { CATEGORY_LABEL, DEPTH_LABEL, LOCATION_SOURCE_LABEL } from "@/lib/labels";
 import { isLocated, type Report, type Severity, type Status } from "@/lib/types";
 
@@ -296,6 +297,12 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
             Shortcuts <kbd>?</kbd>
           </button>
         </div>
+        {mode === "responder" && (
+          <div className="ops-tools">
+            <a href="/respond/sitrep" className="tool-link">Situation report</a>
+            <a href="/api/reports/export" className="tool-link">Download CSV</a>
+          </div>
+        )}
         {mode === "responder" && ai && (
           <p className={`saving${quotaLow || ai.mode === "demo" ? " warn" : ""}`}>
             {ai.mode === "demo"
@@ -357,6 +364,13 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
               <button className="linklike" onClick={() => setPinning(false)}>Cancel (Esc)</button>
             </p>
           )}
+          <div className="map-legend" aria-label="Map legend">
+            <span><i className="dot" data-sev="critical" />Critical</span>
+            <span><i className="dot" data-sev="high" />High</span>
+            <span><i className="dot" data-sev="moderate" />Moderate</span>
+            <span><i className="dot" data-sev="low" />Low</span>
+            <span className="legend-note">Bigger circle = more independent reports</span>
+          </div>
           <MapView
             reports={queue}
             selectedId={selectedId}
@@ -427,6 +441,20 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                   </tfoot>
                 </table>
               </details>
+
+              {mode === "responder" && selected.history.length > 0 && (
+                <details className="why activity">
+                  <summary>Activity ({selected.history.length})</summary>
+                  <ol>
+                    {[...selected.history].reverse().map((h, i) => (
+                      <li key={i}>
+                        <time dateTime={h.at}>{new Date(h.at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</time>
+                        <span>{HISTORY_LABEL[h.action]}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </details>
+              )}
 
               {mode === "responder" && (
                 <div className="row">

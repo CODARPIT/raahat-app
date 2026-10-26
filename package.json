@@ -10,7 +10,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "seed": "tsx scripts/seed.ts"
+    "seed": "tsx scripts/seed.ts",
+    "seed:known-old": "tsx scripts/seed-known-old.ts"
   },
   "dependencies": {
     "cloudinary": "^2.5.1",

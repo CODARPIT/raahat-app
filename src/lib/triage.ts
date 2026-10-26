@@ -168,6 +168,28 @@ export function phashDistance(a: string, b: string): number {
   return dist;
 }
 
+// ── Known old photos ─────────────────────────────────────────────────────────
+
+/** A photo from a past disaster that keeps being re-shared as new. */
+export interface KnownOldPhoto {
+  phash: string;
+  caption: string; // e.g. "Bihar floods, August 2017"
+}
+
+/**
+ * Review reason if the incoming photo is (a forwarded copy of) a known recycled photo.
+ * Uses the same perceptual-hash threshold as duplicate detection.
+ */
+export function knownOldReason(phash: string | null, library: KnownOldPhoto[]): string | null {
+  if (!phash) return null;
+  let best: { caption: string; d: number } | null = null;
+  for (const k of library) {
+    const d = phashDistance(phash, k.phash);
+    if (d <= DUPLICATE_PHASH_MAX && (!best || d < best.d)) best = { caption: k.caption, d };
+  }
+  return best ? `Matches an older photo: ${best.caption}` : null;
+}
+
 export interface Candidate {
   publicId: string;
   lat: number | null;
