@@ -78,7 +78,13 @@ button, input, textarea { font: inherit; color: inherit; }
 .btn-primary { background: var(--teal); border-color: var(--teal); color: var(--teal-ink); }
 .btn-primary:hover { filter: brightness(1.08); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-capture { width: 100%; min-height: 72px; font-size: 20px; border-style: dashed; border-width: 2px; }
+.btn-capture { width: 100%; min-height: 72px; font-size: 20px; }
+.capture { display: grid; gap: 10px; }
+.capture .btn { position: relative; width: 100%; }
+/* The file inputs stay focusable and clickable through their labels, just invisible. */
+.capture input { position: absolute; inset: 0; opacity: 0; width: 1px; height: 1px; }
+.capture .btn:focus-within { outline: 3px solid var(--focus); outline-offset: 2px; }
+.capture .btn[aria-disabled="true"] { opacity: 0.6; pointer-events: none; }
 
 /* ── The gauge staff (signature motif) ──────────────── */
 .gauge {
@@ -232,7 +238,7 @@ button, input, textarea { font: inherit; color: inherit; }
 @keyframes rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 
 @media (max-width: 520px) {
-  .site-header { padding-block: 12px; }
+  .site-header { padding-block: 12px; flex-wrap: wrap; }
   .wordmark small { display: none; }
   .site-nav { gap: 12px; font-size: 15px; }
   .site-nav a { white-space: nowrap; }

@@ -2,7 +2,6 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
-import { CldUploadWidget, type CloudinaryUploadWidgetInfo } from "next-cloudinary";
 import { Gauge } from "@/components/Gauge";
 import { CATEGORY_LABEL, thumbUrl } from "@/lib/cld-url";
 import { REPORT_FOLDER, REPORT_TAG } from "@/lib/constants";
@@ -18,6 +17,57 @@ interface Upload {
 
 type Loc = { lat: number; lng: number; accuracy?: number } | null;
 
+const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+const API_KEY = process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY;
+const MAX_SIDE = 1600;
+const MAX_BYTES = 40_000_000;
+
+/** Downscale on the phone before upload: a 12 MP photo becomes a few hundred KB. */
+async function downscale(file: File): Promise<Blob> {
+  if (!file.type.startsWith("image/")) return file;
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext("2d")!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close();
+    const blob = await new Promise<Blob | null>((done) => canvas.toBlob(done, "image/jpeg", 0.85));
+    return blob && blob.size < file.size ? blob : file;
+  } catch {
+    return file; // e.g. a HEIC the browser can't decode; Cloudinary converts it instead
+  }
+}
+
+/** Signed direct upload, so the camera opens in one tap instead of inside a widget. */
+async function uploadPhoto(file: File): Promise<Upload> {
+  const timestamp = Math.round(Date.now() / 1000);
+  const paramsToSign = { folder: REPORT_FOLDER, tags: REPORT_TAG, timestamp };
+  const [body, signRes] = await Promise.all([
+    downscale(file),
+    fetch("/api/sign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paramsToSign }),
+    }),
+  ]);
+  const signed = await signRes.json();
+  if (!signRes.ok) throw new Error(signed.error ?? "Couldn't prepare the upload.");
+
+  const form = new FormData();
+  form.append("file", body);
+  form.append("api_key", API_KEY ?? "");
+  form.append("timestamp", String(timestamp));
+  form.append("folder", REPORT_FOLDER);
+  form.append("tags", REPORT_TAG);
+  form.append("signature", signed.signature);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`, { method: "POST", body: form });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message ?? "The photo didn't upload. Check your connection and try again.");
+  return { publicId: data.public_id, resourceType: data.resource_type === "video" ? "video" : "image" };
+}
+
 export default function ReportPage() {
   const [lang, setLang] = useState<Lang>("en");
   const t = T[lang];
@@ -25,6 +75,7 @@ export default function ReportPage() {
   const [loc, setLoc] = useState<Loc>(null);
   const [locState, setLocState] = useState<"idle" | "locating" | "found" | "failed">("idle");
   const [note, setNote] = useState("");
+  const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Report | null>(null);
@@ -46,6 +97,24 @@ export default function ReportPage() {
     locate();
     if (navigator.language?.startsWith("hi")) setLang("hi");
   }, [locate]);
+
+  async function pick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // so picking the same file again still fires
+    if (!file) return;
+    if (file.size > MAX_BYTES) {
+      return setError(lang === "hi" ? "फ़ाइल 40 MB से बड़ी है।" : "That file is over 40 MB. Try a photo or a shorter video.");
+    }
+    setError(null);
+    setUploading(true);
+    try {
+      setUpload(await uploadPhoto(file));
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
 
   async function send() {
     setError(null);
@@ -116,36 +185,17 @@ export default function ReportPage() {
                 <img src={thumbUrl(upload, "normal", true)} alt="Selected photo, faces pixelated" />
               </div>
             )}
-            <CldUploadWidget
-              signatureEndpoint="/api/sign"
-              options={{
-                folder: REPORT_FOLDER,
-                tags: [REPORT_TAG],
-                sources: ["camera", "local"],
-                multiple: false,
-                maxFiles: 1,
-                resourceType: "auto",
-                clientAllowedFormats: ["jpg", "jpeg", "png", "webp", "heic", "mp4", "mov", "3gp"],
-                maxFileSize: 40_000_000,
-                // Downscale on the phone before upload: a 12 MP photo becomes a few hundred KB.
-                maxImageWidth: 1600,
-                maxImageHeight: 1600,
-                showPoweredBy: false,
-              }}
-              onSuccess={(res) => {
-                const info = res.info as CloudinaryUploadWidgetInfo;
-                if (info?.public_id) {
-                  setUpload({ publicId: info.public_id, resourceType: info.resource_type === "video" ? "video" : "image" });
-                  setError(null);
-                }
-              }}
-            >
-              {({ open, isLoading }) => (
-                <button type="button" className="btn btn-capture" onClick={() => open()} disabled={isLoading}>
-                  {upload ? t.retake : t.takePhoto}
-                </button>
-              )}
-            </CldUploadWidget>
+            <div className="capture" aria-busy={uploading}>
+              {/* capture="environment" opens the rear camera directly on phones */}
+              <label className="btn btn-primary btn-capture" aria-disabled={uploading}>
+                {uploading ? t.uploading : upload ? t.retake : t.takePhoto}
+                <input type="file" accept="image/*" capture="environment" onChange={pick} disabled={uploading} />
+              </label>
+              <label className="btn" aria-disabled={uploading}>
+                {t.gallery}
+                <input type="file" accept="image/*,video/*" onChange={pick} disabled={uploading} />
+              </label>
+            </div>
           </div>
 
           <div className="field">

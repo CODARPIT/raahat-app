@@ -4,8 +4,9 @@ export const T = {
   en: {
     reportTitle: "Report what you see",
     reportLead: "One photo and your location. Responders see it in under a minute, with faces blurred.",
-    takePhoto: "Take or choose a photo",
-    retake: "Change photo",
+    takePhoto: "Take a photo",
+    gallery: "Choose from gallery",
+    retake: "Retake photo",
     uploading: "Uploading…",
     location: "Location",
     locating: "Finding your location…",
@@ -26,8 +27,9 @@ export const T = {
   hi: {
     reportTitle: "जो दिख रहा है, बताइए",
     reportLead: "एक फ़ोटो और आपकी लोकेशन। एक मिनट से कम में राहत दल तक पहुँचेगी, चेहरे धुंधले करके।",
-    takePhoto: "फ़ोटो लें या चुनें",
-    retake: "फ़ोटो बदलें",
+    takePhoto: "फ़ोटो खींचें",
+    gallery: "गैलरी से चुनें",
+    retake: "दोबारा फ़ोटो खींचें",
     uploading: "अपलोड हो रही है…",
     location: "लोकेशन",
     locating: "आपकी लोकेशन ढूँढ रहे हैं…",
