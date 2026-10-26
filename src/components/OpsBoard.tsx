@@ -202,11 +202,21 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
               </dl>
               {mode === "responder" && (
                 <div className="row">
-                  {NEXT_STATUS.filter((s) => s.status !== selected.status).map((s) => (
-                    <button key={s.status} className={s.status === "dispatched" ? "btn btn-primary" : "btn"} disabled={busy} onClick={() => changeStatus(s.status)}>
-                      {s.label}
-                    </button>
-                  ))}
+                  {/* Only the report's current status is highlighted. */}
+                  {NEXT_STATUS.map((s) => {
+                    const current = s.status === selected.status;
+                    return (
+                      <button
+                        key={s.status}
+                        className={current ? "btn btn-primary" : "btn"}
+                        aria-pressed={current}
+                        disabled={busy}
+                        onClick={() => !current && changeStatus(s.status)}
+                      >
+                        {s.label}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
