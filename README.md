@@ -13,7 +13,7 @@ Built for **Hacktober HackDays 2026** (SheBuilds Delhi × MLH), Tech for Social 
 ## How one report flows
 
 ```
-Phone (camera, on-device downscale, signed)      WhatsApp (Twilio Sandbox: photo, then location pin)
+Phone (camera, on-device downscale, signed)      WhatsApp (Twilio Sandbox: photo + location pin, any order)
    │                                                 │  POST /api/whatsapp  (signature checked)
    ▼                                                 ▼
 Cloudinary asset  ── tag raahat_report  ◄──── upload_stream (Twilio media needs auth)
@@ -71,8 +71,10 @@ npm test                       # triage, dedupe and parsing tests
 3. Deploy: push to GitHub, import into Vercel, add the same env vars.
 4. Optional, WhatsApp intake (free Twilio trial, no card): Twilio Console → Messaging → Try it out →
    Send a WhatsApp message. Set "When a message comes in" to `https://<your-app>/api/whatsapp` (HTTP POST),
-   and set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `PUBLIC_BASE_URL` (exactly the public origin, used to
-   check Twilio's signature), `TWILIO_WHATSAPP_NUMBER` and `TWILIO_SANDBOX_JOIN` (shown on the landing page).
+   and set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_WHATSAPP_FROM`. Add `TWILIO_SANDBOX_JOIN`
+   (e.g. `join silver-tiger`) to show the join steps on the landing page. If a proxy rewrites the request URL,
+   set `TWILIO_WEBHOOK_URL` to the exact webhook URL so Twilio's signature still checks out.
+   Citizens send a photo and a location pin in either order; the pending half is kept in Cloudinary for an hour.
 
 Pages and endpoints: `/` overview · `/report` citizen reporting (Hindi/English) · `/map` public map (faces pixelated, locations rounded to ~110 m, notes hidden) · `/respond` control room (passcode) ·
 `/api/health` pre-demo check (Cloudinary reachable, AI mode, AI quota, cache size) · `/api/whatsapp` Twilio webhook.
@@ -124,6 +126,8 @@ not every old photo. Weights live in `src/lib/triage.ts` and are covered by `tes
 
 - Originals are delivered as public (unguessable) URLs; production should upload as `authenticated` and sign delivery URLs.
 - One shared responder passcode; production needs per-responder accounts and an audit log.
-- The cache and the WhatsApp photo → location handshake live in memory, so they are only consistent within one
-  server instance. On Vercel, instances don't share memory; a production version would use Redis.
+- The read-your-writes cache lives in memory, so it is only consistent within one server instance. On Vercel,
+  instances don't share memory; a production version would use Redis. (WhatsApp's photo/location pairing is stored
+  in Cloudinary, so it works across instances.)
+- A WhatsApp photo is filed once its location pin arrives; a photo whose pin never comes stays pending for an hour.
 - AI output can be wrong. Raahat ranks, it never discards: every report stays visible to a human.

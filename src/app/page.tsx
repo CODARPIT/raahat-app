@@ -34,10 +34,10 @@ function Icon({ d }: { d: string }) {
 }
 
 export default async function Home() {
+  // Shown once the Twilio sandbox is set up: the number comes from TWILIO_WHATSAPP_FROM ("whatsapp:+1415…").
+  const waNumber = process.env.TWILIO_WHATSAPP_FROM?.replace(/^whatsapp:/, "");
   const whatsapp =
-    process.env.TWILIO_WHATSAPP_NUMBER && process.env.TWILIO_SANDBOX_JOIN
-      ? { number: process.env.TWILIO_WHATSAPP_NUMBER, join: process.env.TWILIO_SANDBOX_JOIN }
-      : null;
+    waNumber && process.env.TWILIO_SANDBOX_JOIN ? { number: waNumber, join: process.env.TWILIO_SANDBOX_JOIN } : null;
   let counts: Record<Severity, number> = { critical: 0, high: 0, moderate: 0, low: 0 };
   let live = true;
   try {

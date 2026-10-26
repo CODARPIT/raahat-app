@@ -1,142 +1,174 @@
-// Twilio WhatsApp Sandbox webhook. A citizen sends a photo (with an optional caption),
-// then a location pin; each arrives as its own POST. Configure the sandbox's
-// "When a message comes in" URL as  <PUBLIC_BASE_URL>/api/whatsapp  (HTTP POST).
+// Twilio WhatsApp webhook. Answers Twilio at once with an empty reply, then does
+// the slow work (media download, upload, AI triage) in after() and replies to the
+// citizen through the REST API, so Twilio's 15 s webhook timeout never bites.
 
-import { after } from "next/server";
-import { awaitingReport, expectLocation, forgetAwaiting, setLocation, triage, uploadBuffer } from "@/lib/reports";
-import type { Report } from "@/lib/types";
+import { after, NextResponse } from "next/server";
+import { cloudinary, creds } from "@/lib/cloudinary";
+import { CATEGORY_LABEL } from "@/lib/cld-url";
+import { REPORT_FOLDER, REPORT_TAG } from "@/lib/constants";
+import { triage } from "@/lib/reports";
 import {
-  isReportMedia,
-  looksHindi,
-  parseInbound,
-  REPLIES,
-  reporterHash,
-  twiml,
-  validTwilioSignature,
-  type Lang,
-  type TwilioParams,
+  detectLang,
+  downloadMedia,
+  filedMessage,
+  msg,
+  parseLocation,
+  sendWhatsApp,
+  senderKey,
+  twilio,
+  validSignature,
 } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-// Twilio gives up after 15 s. Media download + upload take a few seconds, so if
-// triage isn't done by this point we reply "analysing" and finish it after responding.
-const REPLY_DEADLINE_MS = 8000;
-const MAX_MEDIA_BYTES = 16_000_000;
+const PENDING_FOLDER = "raahat/whatsapp";
+const PENDING_MS = 60 * 60_000; // a photo and a location sent within an hour belong together
 
-// Per-instance state for the photo → location handshake (see README: one warm instance for demos).
-const inFlight = new Map<string, Promise<Report | null>>();
-const pendingPin = new Map<string, { lat: number; lng: number }>();
-const langOf = new Map<string, Lang>();
+type Ctx = Record<string, string>;
+type Lang = "en" | "hi";
 
-const TIMEOUT = Symbol("timeout");
-function within<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMEOUT> {
-  return Promise.race([p, new Promise<typeof TIMEOUT>((r) => setTimeout(() => r(TIMEOUT), ms))]);
+const ctxOf = (r: { context?: { custom?: Ctx } }): Ctx => r.context?.custom ?? {};
+const fresh = (c: Ctx) => Date.now() - Number(c.at ?? 0) < PENDING_MS;
+
+async function pendingPhoto(key: string) {
+  for (const resourceType of ["image", "video"] as const) {
+    try {
+      const r = await cloudinary.api.resource(`${PENDING_FOLDER}/${key}`, { resource_type: resourceType });
+      const c = ctxOf(r);
+      if (fresh(c)) return { publicId: r.public_id as string, resourceType, note: c.note ?? "", lang: c.lang as Lang };
+    } catch {
+      // not found: try the next type
+    }
+  }
+  return null;
 }
 
-function reply(message: string) {
-  return new Response(twiml(message), { headers: { "Content-Type": "text/xml; charset=utf-8" } });
+async function pendingLocation(key: string) {
+  try {
+    const r = await cloudinary.api.resource(`${PENDING_FOLDER}/${key}_loc`, { resource_type: "raw" });
+    const c = ctxOf(r);
+    return fresh(c) ? { lat: Number(c.lat), lng: Number(c.lng) } : null;
+  } catch {
+    return null;
+  }
 }
 
-function webhookUrl(req: Request) {
-  const base = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
-  if (base) return `${base}/api/whatsapp`;
-  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host");
-  const proto = req.headers.get("x-forwarded-proto") ?? "https";
-  return `${proto}://${host}/api/whatsapp`;
+async function fileReport(
+  to: string,
+  key: string,
+  photo: { publicId: string; resourceType: "image" | "video"; note: string },
+  loc: { lat: number; lng: number },
+  lang: Lang,
+) {
+  await sendWhatsApp(to, msg(lang, "working"));
+  // Move the photo out of the per-sender slot so the next photo starts a new report.
+  const renamed = await cloudinary.uploader.rename(photo.publicId, `${REPORT_FOLDER}/wa_${key}_${Date.now()}`, {
+    resource_type: photo.resourceType,
+    invalidate: true,
+  });
+  await cloudinary.api
+    .update(`${PENDING_FOLDER}/${key}_loc`, { resource_type: "raw", context: { at: "0" } } as Record<string, unknown>)
+    .catch(() => undefined);
+  const report = await triage({
+    publicId: renamed.public_id,
+    resourceType: photo.resourceType,
+    lat: loc.lat,
+    lng: loc.lng,
+    locationSource: "whatsapp_pin",
+    note: photo.note.slice(0, 500),
+    lang,
+    channel: "whatsapp",
+    reporterHash: key, // salted hash of the number, never the number itself
+  });
+  await sendWhatsApp(
+    to,
+    filedMessage(lang, {
+      severity: report.severity,
+      score: report.score,
+      categoryLabel: CATEGORY_LABEL[report.primaryCategory] ?? report.primaryCategory,
+      duplicate: Boolean(report.duplicateOf),
+    }),
+  );
 }
 
-async function fetchTwilioMedia(url: string): Promise<Buffer> {
-  const auth = Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64");
-  const res = await fetch(url, { headers: { Authorization: `Basic ${auth}` }, signal: AbortSignal.timeout(8000) });
-  if (!res.ok) throw new Error(`Twilio media download failed (${res.status})`);
-  const bytes = Buffer.from(await res.arrayBuffer());
-  if (bytes.byteLength > MAX_MEDIA_BYTES) throw new Error("Media too large.");
-  return bytes;
+async function handle(p: Record<string, string>) {
+  const to = p.From;
+  const key = senderKey(to, creds.apiSecret);
+  const text = (p.Body ?? "").trim();
+  let lang = detectLang(text);
+  const loc = parseLocation(p);
+
+  if (Number(p.NumMedia ?? 0) > 0) {
+    const type = p.MediaContentType0 ?? "";
+    const resourceType = type.startsWith("image/") ? "image" : type.startsWith("video/") ? "video" : null;
+    if (!resourceType) return sendWhatsApp(to, msg(lang, "unsupported"));
+    const media = await downloadMedia(p.MediaUrl0);
+    const up = await cloudinary.uploader.upload(`data:${type};base64,${media.toString("base64")}`, {
+      public_id: `${PENDING_FOLDER}/${key}`,
+      resource_type: resourceType,
+      overwrite: true,
+      invalidate: true,
+      tags: [REPORT_TAG, "whatsapp_pending"],
+      context: { note: text.slice(0, 300), lang, at: String(Date.now()) },
+    });
+    const photo = { publicId: up.public_id, resourceType, note: text } as const;
+    const savedLoc = await pendingLocation(key);
+    if (savedLoc) return fileReport(to, key, photo, savedLoc, lang);
+    return sendWhatsApp(to, msg(lang, "askLocation"));
+  }
+
+  if (loc) {
+    const photo = await pendingPhoto(key);
+    if (photo) {
+      lang = photo.lang === "hi" ? "hi" : lang;
+      return fileReport(to, key, photo, loc, lang);
+    }
+    await cloudinary.uploader.upload(`data:text/plain;base64,${Buffer.from("raahat").toString("base64")}`, {
+      public_id: `${PENDING_FOLDER}/${key}_loc`,
+      resource_type: "raw",
+      overwrite: true,
+      context: { lat: loc.lat.toFixed(6), lng: loc.lng.toFixed(6), at: String(Date.now()) },
+    });
+    return sendWhatsApp(to, msg(lang, "askPhoto"));
+  }
+
+  // Plain text: attach it to a waiting photo as the note, otherwise explain how to report.
+  const photo = text ? await pendingPhoto(key) : null;
+  if (photo) {
+    const note = [photo.note, text].filter(Boolean).join(" ").slice(0, 300);
+    await cloudinary.api.update(photo.publicId, {
+      resource_type: photo.resourceType,
+      context: { note, lang: photo.lang ?? lang, at: String(Date.now()) },
+    } as Record<string, unknown>);
+    return sendWhatsApp(to, msg(photo.lang === "hi" ? "hi" : lang, "noteSaved"));
+  }
+  return sendWhatsApp(to, msg(lang, "help"));
 }
 
 export async function POST(req: Request) {
-  const token = process.env.TWILIO_AUTH_TOKEN;
-  if (!token || !process.env.TWILIO_ACCOUNT_SID) {
-    return new Response("WhatsApp intake is not configured.", { status: 503 });
+  if (!twilio.accountSid || !twilio.authToken || !twilio.from) {
+    return NextResponse.json({ error: "WhatsApp intake is not configured." }, { status: 503 });
   }
-  const params = Object.fromEntries(new URLSearchParams(await req.text())) as TwilioParams;
-  if (!validTwilioSignature(token, req.headers.get("x-twilio-signature"), webhookUrl(req), params)) {
-    return new Response("Invalid signature.", { status: 403 });
+  const form = await req.formData();
+  const params: Record<string, string> = {};
+  form.forEach((v, k) => {
+    if (typeof v === "string") params[k] = v;
+  });
+  // Twilio signs the exact webhook URL it was given; TWILIO_WEBHOOK_URL pins it if a proxy rewrites req.url.
+  const url = process.env.TWILIO_WEBHOOK_URL || req.url;
+  if (!validSignature(twilio.authToken, url, params, req.headers.get("x-twilio-signature") ?? "")) {
+    return NextResponse.json({ error: "Invalid Twilio signature." }, { status: 403 });
   }
+  if (!params.From) return NextResponse.json({ error: "Missing sender." }, { status: 400 });
 
-  const msg = parseInbound(params);
-  const reporter = reporterHash(msg.from); // the raw number is never stored
-  const lang: Lang =
-    msg.kind === "photo" && msg.caption ? (looksHindi(msg.caption) ? "hi" : "en")
-    : msg.kind === "text" && msg.body ? (looksHindi(msg.body) ? "hi" : "en")
-    : langOf.get(reporter) ?? "en";
-  langOf.set(reporter, lang);
-
-  if (msg.kind === "text") return reply(REPLIES.howTo(lang));
-
-  if (msg.kind === "location") {
-    const job = inFlight.get(reporter);
-    if (job && (await within(job, REPLY_DEADLINE_MS)) === TIMEOUT) {
-      // The photo is still being analysed; the pin is applied as soon as it's done.
-      pendingPin.set(reporter, { lat: msg.lat, lng: msg.lng });
-      return reply(REPLIES.locationAdded(lang));
-    }
+  after(async () => {
     try {
-      const target = await awaitingReport(reporter);
-      if (!target) return reply(REPLIES.locationWithoutPhoto(lang));
-      await setLocation(target.publicId, target.resourceType, msg.lat, msg.lng, "whatsapp_pin");
-      forgetAwaiting(reporter);
-      return reply(REPLIES.locationAdded(lang));
+      await handle(params);
     } catch (err) {
-      console.error("[raahat] WhatsApp location failed:", (err as Error).message);
-      return reply(REPLIES.failed(lang));
+      console.error("[raahat] WhatsApp report failed:", (err as Error).message);
+      await sendWhatsApp(params.From, msg(detectLang(params.Body ?? ""), "failed")).catch(() => undefined);
     }
-  }
-
-  // Photo or video.
-  if (!isReportMedia(msg.contentType)) return reply(REPLIES.unsupported(lang));
-  let upload: { publicId: string; resourceType: "image" | "video" };
-  try {
-    upload = await uploadBuffer(await fetchTwilioMedia(msg.mediaUrl), msg.contentType.startsWith("video/") ? "video" : "image");
-  } catch (err) {
-    console.error("[raahat] WhatsApp upload failed:", (err as Error).message);
-    return reply(REPLIES.failed(lang));
-  }
-  expectLocation(reporter, upload.publicId, upload.resourceType);
-
-  const job: Promise<Report | null> = (async () => {
-    const report = await triage({
-      ...upload,
-      lat: null,
-      lng: null,
-      locationSource: "missing",
-      note: msg.caption.slice(0, 500),
-      lang,
-      channel: "whatsapp",
-      reporterHash: reporter,
-    });
-    const pin = pendingPin.get(reporter);
-    if (!pin) return report;
-    pendingPin.delete(reporter);
-    forgetAwaiting(reporter);
-    return setLocation(report.publicId, report.resourceType, pin.lat, pin.lng, "whatsapp_pin");
-  })()
-    .catch((err) => {
-      console.error("[raahat] WhatsApp triage failed:", (err as Error).message);
-      return null;
-    })
-    .finally(() => {
-      if (inFlight.get(reporter) === job) inFlight.delete(reporter);
-    });
-  inFlight.set(reporter, job);
-
-  const done = await within(job, REPLY_DEADLINE_MS);
-  if (done === TIMEOUT) {
-    after(() => job); // keep the function alive until triage finishes
-    return reply(REPLIES.analysing(lang));
-  }
-  if (!done) return reply(REPLIES.failed(lang));
-  return reply(REPLIES.received(lang, done.severity, done.lat === null));
+  });
+  return new NextResponse("<Response></Response>", { headers: { "Content-Type": "text/xml" } });
 }
