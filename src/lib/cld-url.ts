@@ -73,8 +73,12 @@ export const SEVERITY_HEX: Record<Severity, string> = {
 
 export const CATEGORY_LABEL: Record<string, string> = {
   trapped_or_injured: "People trapped or injured",
+  crowd_crush: "Crowd crush or stampede",
+  medical_emergency: "Medical emergency",
   fire: "Fire",
+  gas_or_chemical_leak: "Gas or chemical leak",
   structural_collapse: "Building damage",
+  storm_damage: "Storm or cyclone damage",
   landslide: "Landslide",
   electrical_hazard: "Live wire or electrical hazard",
   flood: "Flooding",

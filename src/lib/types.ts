@@ -3,8 +3,12 @@
 
 export const CATEGORIES = [
   "trapped_or_injured",
+  "crowd_crush",
+  "medical_emergency",
   "fire",
+  "gas_or_chemical_leak",
   "structural_collapse",
+  "storm_damage",
   "landslide",
   "electrical_hazard",
   "flood",

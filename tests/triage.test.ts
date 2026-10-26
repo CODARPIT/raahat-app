@@ -144,6 +144,24 @@ test("demo triage understands Hindi and English notes", () => {
   assert.equal(demoFindings("lol").categories[0], "no_emergency");
 });
 
+test("demo triage recognises storm, crowd, medical and gas reports", () => {
+  assert.ok(demoFindings("Cyclone tore the roofs off, trees uprooted").categories.includes("storm_damage"));
+  const crowd = demoFindings("भगदड़ मच गई, बहुत भीड़ है");
+  assert.ok(crowd.categories.includes("crowd_crush"));
+  assert.equal(crowd.peopleInDanger, true);
+  assert.ok(demoFindings("Old man unconscious, need ambulance").categories.includes("medical_emergency"));
+  assert.ok(demoFindings("गैस सिलेंडर से रिसाव, smell everywhere").categories.includes("gas_or_chemical_leak"));
+});
+
+test("new life-safety types outrank property damage", () => {
+  const storm = scoreReport({ findings: { ...base, categories: ["storm_damage"], waterDepth: "none" }, corroborations: 0 });
+  for (const c of ["crowd_crush", "gas_or_chemical_leak", "medical_emergency"] as const) {
+    const r = scoreReport({ findings: { ...base, categories: [c], waterDepth: "none" }, corroborations: 0 });
+    assert.equal(r.primaryCategory, c);
+    assert.ok(r.score > storm.score);
+  }
+});
+
 test("overlay text escapes commas and slashes for Cloudinary", () => {
   assert.equal(encodeOverlayText("Flood, 2/3 lanes"), "Flood%252C%202%252F3%20lanes");
 });

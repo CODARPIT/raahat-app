@@ -6,8 +6,12 @@ import type { Category, Severity, VisionFindings, WaterDepth } from "./types";
 /** How dangerous each category is on its own (0–40). Life safety first. */
 export const CATEGORY_WEIGHT: Record<Category, number> = {
   trapped_or_injured: 40,
+  crowd_crush: 35,
+  medical_emergency: 30,
   fire: 35,
+  gas_or_chemical_leak: 35,
   structural_collapse: 30,
+  storm_damage: 25,
   landslide: 30,
   electrical_hazard: 25,
   flood: 20,

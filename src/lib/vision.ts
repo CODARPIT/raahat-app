@@ -9,8 +9,12 @@ import { CATEGORIES, type Category, type VisionFindings, type WaterDepth } from 
 
 const TAG_DEFINITIONS: { name: Category; description: string }[] = [
   { name: "trapped_or_injured", description: "Does the image show a person who is trapped, stranded on a roof or in water, injured, or lying on the ground?" },
+  { name: "crowd_crush", description: "Does the image show a dangerously packed crowd, a stampede, or people being crushed or trampled?" },
+  { name: "medical_emergency", description: "Does the image show a person unconscious, collapsed, having a seizure, or receiving urgent medical aid such as CPR?" },
   { name: "fire", description: "Is there visible fire, flames or heavy smoke?" },
+  { name: "gas_or_chemical_leak", description: "Does the image show a gas leak, a leaking cylinder or tanker, a chemical spill, toxic fumes, or people covering their faces from fumes?" },
   { name: "structural_collapse", description: "Does the image show a collapsed, cracked or badly damaged building, wall, bridge or roof?" },
+  { name: "storm_damage", description: "Does the image show cyclone or storm damage, such as torn-off roofs, uprooted trees, flattened huts, or wreckage scattered by strong wind?" },
   { name: "landslide", description: "Does the image show a landslide, mudslide, or rocks and earth blocking an area?" },
   { name: "electrical_hazard", description: "Are there fallen electric poles, hanging or snapped power lines, or exposed wiring near water?" },
   { name: "flood", description: "Is a significant area flooded, with water covering roads, fields or entering homes?" },
@@ -24,7 +28,7 @@ const JSON_PROMPT = `You are triaging a citizen photo for disaster responders in
 {"is_real_photo": boolean (false if screenshot, meme, poster, drawing, AI-generated or photo of a screen),
  "is_disaster_related": boolean (true if it shows damage, a hazard, flooding, or people needing help),
  "people_visible": integer,
- "people_in_danger": boolean (anyone trapped, stranded, injured, in deep or fast water, or near a live wire),
+ "people_in_danger": boolean (anyone trapped, stranded, injured, unconscious, in a crowd crush, exposed to gas or fumes, in deep or fast water, or near a live wire),
  "water_depth": one of "none","ankle","knee","waist","chest_or_more","unknown" (judge against people, vehicles, doors),
  "access_blocked": boolean (can a rescue vehicle NOT reach this spot?),
  "summary": "one factual sentence for a rescue coordinator, under 25 words",
@@ -83,15 +87,15 @@ export function findingsFromLive(tagNames: string[], json: Record<string, unknow
 }
 
 async function liveFindings(imageUrl: string): Promise<VisionFindings> {
-  const [tagging, general] = await Promise.all([
-    // Cloudinary tag names allow only lower-case letters, digits and hyphens.
-    analyze("ai_vision_tagging", {
-      source: { uri: imageUrl },
-      tag_definitions: TAG_DEFINITIONS.map((t) => ({ ...t, name: t.name.replace(/_/g, "-") })),
-    }),
+  // Cloudinary tag names allow only lower-case letters, digits and hyphens,
+  // and the tagging analyzer takes at most 10 definitions per call.
+  const defs = TAG_DEFINITIONS.map((t) => ({ ...t, name: t.name.replace(/_/g, "-") }));
+  const batches = [defs.slice(0, 10), defs.slice(10)].filter((b) => b.length);
+  const [general, ...taggings] = await Promise.all([
     analyze("ai_vision_general", { source: { uri: imageUrl }, prompts: [JSON_PROMPT] }),
+    ...batches.map((b) => analyze("ai_vision_tagging", { source: { uri: imageUrl }, tag_definitions: b })),
   ]);
-  const tags = (tagging.data?.analysis?.tags as { name: string }[] | undefined) ?? [];
+  const tags = taggings.flatMap((t) => (t.data?.analysis?.tags as { name: string }[] | undefined) ?? []);
   const responses = (general.data?.analysis?.responses as { value: string }[] | undefined) ?? [];
   return findingsFromLive(
     tags.map((t) => t.name.replace(/-/g, "_")),
@@ -103,8 +107,12 @@ async function liveFindings(imageUrl: string): Promise<VisionFindings> {
 
 const KEYWORDS: [Category, RegExp][] = [
   ["trapped_or_injured", /trapped|stuck|stranded|injur|hurt|bleed|roof|rescue|फंस|फँस|घायल|छत|बचाओ/i],
+  ["crowd_crush", /stampede|crowd crush|crowd surge|trampl|भगदड़|भगदड/i],
+  ["medical_emergency", /unconscious|fainted|faint|seizure|heart attack|not breathing|ambulance|doctor|बेहोश|दौरा|हार्ट अटैक|एम्बुलेंस|डॉक्टर/i],
   ["fire", /fire|smoke|burn|flame|आग|धुआ/i],
+  ["gas_or_chemical_leak", /gas|leak|chemical|toxic|fumes|cylinder|ammonia|chlorine|गैस|रिसाव|ज़हरील|जहरील|सिलेंडर/i],
   ["structural_collapse", /collaps|crack|wall fell|building|bridge|गिर|दरार|मकान|पुल/i],
+  ["storm_damage", /storm|cyclone|hurricane|gale|strong wind|uproot|hail|तूफ़ान|तूफान|चक्रवात|आंधी|आँधी/i],
   ["landslide", /landslide|mudslide|rocks|भूस्खलन|मलबा/i],
   ["electrical_hazard", /wire|pole|current|electric|shock|transformer|तार|करंट|बिजली|खंभा/i],
   ["flood", /flood|overflow|river|बाढ़|बाढ|नदी|डूब/i],
@@ -133,7 +141,11 @@ export function demoFindings(note: string): VisionFindings {
     isRealPhoto: true,
     isDisasterRelated: cats[0] !== "no_emergency",
     peopleVisible,
-    peopleInDanger: cats.includes("trapped_or_injured") || (cats.includes("electrical_hazard") && cats.includes("flood")),
+    peopleInDanger:
+      cats.includes("trapped_or_injured") ||
+      cats.includes("crowd_crush") ||
+      cats.includes("medical_emergency") ||
+      (cats.includes("electrical_hazard") && cats.includes("flood")),
     waterDepth: depth,
     accessBlocked: cats.includes("road_blocked") || cats.includes("landslide") || depth === "waist" || depth === "chest_or_more",
     summary: `Reporter says: ${trimmed}`,
