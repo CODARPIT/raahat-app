@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Mukta } from "next/font/google";
 import Link from "next/link";
 import { AccessBar } from "@/components/AccessBar";
@@ -64,6 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           {children}
         </div>
         <SiteFooter />
+        <Analytics />
       </body>
     </html>
   );
