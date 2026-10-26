@@ -335,3 +335,18 @@ kbd {
   cursor: pointer; font-size: 17px; line-height: 1; color: var(--ink-soft); flex: none;
 }
 .theme-toggle:hover { color: var(--ink); border-color: var(--ink); }
+
+/* ── Phase 2: offline outbox on the report page ─────── */
+.outbox-banner {
+  margin: 0 0 18px; padding: 10px 14px; border-radius: var(--r-sm); font-size: 15px; font-weight: 600;
+  background: color-mix(in srgb, var(--sev-high) 14%, var(--paper)); border: 1px solid color-mix(in srgb, var(--sev-high) 45%, transparent);
+}
+.offline-note { margin: 8px 0 10px; color: var(--sev-high); font-weight: 600; }
+.saved .result { grid-template-columns: 40px 1fr; }
+.saved-icon {
+  width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; font-weight: 800;
+  color: var(--sev-high); border: 2px solid var(--sev-high);
+}
+@media (prefers-reduced-motion: no-preference) { .saved-icon { animation: bob 1.8s ease-in-out infinite; } }
+@keyframes bob { 50% { transform: translateY(-3px); } }
+.row-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }

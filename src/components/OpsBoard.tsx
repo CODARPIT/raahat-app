@@ -193,7 +193,8 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
     const measured = reports.filter((r) => r.thumbBytes > 0 && r.originalBytes > 0);
     const orig = measured.reduce((s, r) => s + r.originalBytes, 0);
     const thumb = measured.reduce((s, r) => s + r.thumbBytes, 0);
-    return measured.length ? { orig, thumb, pct: Math.round((1 - thumb / orig) * 100) } : null;
+    // Capped at 99% so rounding never claims "100% less data".
+    return measured.length ? { orig, thumb, pct: Math.min(99, Math.round((1 - thumb / orig) * 100)) } : null;
   }, [reports]);
 
   async function patch(body: Record<string, unknown>) {

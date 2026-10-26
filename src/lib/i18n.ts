@@ -29,6 +29,13 @@ export const T = {
     describePlaceholder: "e.g. Near Gandhi School, Rampur village",
     noLocationNote: "No problem. Your report still reaches responders; they will place it on the map.",
     pendingLocation: "Responders will add the location from your description.",
+    photoSavedOffline: "No signal right now. Your photo is saved on this phone and will be sent with your report when the connection returns.",
+    savedTitle: "Saved on your phone",
+    savedBody: "There's no signal right now. Raahat will send your report automatically as soon as the connection returns. Keep this page open, or open it again later.",
+    waitingSignal: "Waiting for signal",
+    sendingSaved: "Sending your saved report…",
+    waiting: (n: number) => `${n} saved ${n === 1 ? "report is" : "reports are"} waiting for signal and will send automatically.`,
+    tryNow: "Try sending now",
   },
   hi: {
     reportTitle: "जो दिख रहा है, बताइए",
@@ -58,6 +65,13 @@ export const T = {
     describePlaceholder: "जैसे: गांधी स्कूल के पास, रामपुर गाँव",
     noLocationNote: "कोई बात नहीं। आपकी रिपोर्ट फिर भी राहत दल तक पहुँचेगी; वे इसे नक़्शे पर लगाएँगे।",
     pendingLocation: "राहत दल आपके बताए पते से लोकेशन जोड़ेगा।",
+    photoSavedOffline: "अभी नेटवर्क नहीं है। आपकी फ़ोटो इसी फ़ोन में सेव है, नेटवर्क आते ही रिपोर्ट के साथ भेज दी जाएगी।",
+    savedTitle: "आपके फ़ोन में सेव हो गई",
+    savedBody: "अभी नेटवर्क नहीं है। नेटवर्क आते ही राहत आपकी रिपोर्ट अपने आप भेज देगा। यह पेज खुला रखें, या बाद में फिर खोलें।",
+    waitingSignal: "नेटवर्क का इंतज़ार",
+    sendingSaved: "आपकी सेव की गई रिपोर्ट भेज रहे हैं…",
+    waiting: (n: number) => `${n} सेव की गई रिपोर्ट नेटवर्क का इंतज़ार कर रही है, अपने आप भेज दी जाएगी।`,
+    tryNow: "अभी भेजकर देखें",
   },
 } as const;
 
