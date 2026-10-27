@@ -1,6 +1,9 @@
 // Shared types. A "report" is one Cloudinary asset; its fields live in the
 // asset's contextual metadata and tags, so Cloudinary is the only datastore.
 
+import type { HistoryEntry } from "./history";
+export type { HistoryEntry };
+
 export const CATEGORIES = [
   "trapped_or_injured",
   "crowd_crush",
@@ -80,6 +83,7 @@ export interface Report {
   aiMode: "live" | "demo";
   phash: string | null;
   reporterHash: string | null; // sha256 of a WhatsApp number, never the number itself
+  history: HistoryEntry[]; // audit trail: filed, status changes, pins (newest last)
 }
 
 /** A report that has a location. Only these can corroborate or be drawn on the map. */

@@ -7,3 +7,5 @@ out
 next-env.d.ts
 seed-images/
 scripts/seed.json
+known-old/
+scripts/known-old.json

@@ -218,7 +218,7 @@ function report(over: Partial<Report> = {}): Report {
     categories: ["flood"], primaryCategory: "flood", severity: "low", score: 20, breakdown: [],
     peopleVisible: 0, peopleInDanger: false, waterDepth: "unknown", accessBlocked: false, summary: "flood", summaryHi: "",
     status: "new", needsReview: false, reviewReasons: [], duplicateOf: null, corroborations: 0,
-    originalBytes: 0, thumbBytes: 0, aiMode: "demo", phash: null, reporterHash: null, ...over,
+    originalBytes: 0, thumbBytes: 0, aiMode: "demo", phash: null, reporterHash: null, history: [], ...over,
   };
 }
 

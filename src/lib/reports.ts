@@ -10,9 +10,11 @@
 import { cloudinary } from "./cloudinary";
 import { analysisUrl, thumbUrl } from "./cld-url";
 import { exifDate, exifLocation, oldPhotoReason } from "./exif";
+import { addHistory, decodeHistory, encodeHistory, type HistoryAction } from "./history";
+import { errorMessage } from "./errors";
 import { mergeReports } from "./merge";
 import { placeHint } from "./place";
-import { aiReviewReasons, matchReport, scoreReport, type Candidate } from "./triage";
+import { aiReviewReasons, knownOldReason, matchReport, scoreReport, type Candidate, type KnownOldPhoto } from "./triage";
 import { getFindings } from "./vision";
 import {
   CATEGORIES,
@@ -122,6 +124,8 @@ export function toReport(r: CldResource): Report | null {
     aiMode: c.ai === "live" ? "live" : "demo",
     phash: c.phash || null,
     reporterHash: c.rh || null,
+    // Reports filed before the audit trail existed start with their filing time.
+    history: c.hist ? decodeHistory(c.hist) : [{ action: "filed", at: r.created_at }],
   });
 }
 
@@ -155,6 +159,7 @@ function toContext(r: Report): Ctx {
     ai: r.aiMode,
     phash: r.phash ?? "",
     rh: r.reporterHash ?? "",
+    hist: encodeHistory(r.history),
   };
 }
 
@@ -241,7 +246,7 @@ export async function listReportsDetailed(limit = 200): Promise<ReportList> {
       searchCache = { at: Date.now(), reports: searched };
     } catch (err) {
       if (!searchCache && cache.size === 0) throw err;
-      console.warn("[raahat] Search unavailable, serving cached reports:", (err as Error).message);
+      console.warn("[raahat] Search unavailable, serving cached reports:", errorMessage(err));
       searched = searchCache?.reports ?? [];
       stale = true;
     }
@@ -259,6 +264,31 @@ async function measureBytes(url: string): Promise<number> {
     return (await res.arrayBuffer()).byteLength;
   } catch {
     return 0;
+  }
+}
+
+// Famous recycled disaster photos (raahat/known_old, tag raahat_known_old). Each asset
+// carries its perceptual hash and a caption in context; see scripts/seed-known-old.ts.
+export const KNOWN_OLD_TAG = "raahat_known_old";
+const KNOWN_OLD_TTL_MS = 10 * 60_000;
+let knownOld: { at: number; photos: KnownOldPhoto[] } | null = null;
+
+async function knownOldLibrary(): Promise<KnownOldPhoto[]> {
+  if (knownOld && Date.now() - knownOld.at < KNOWN_OLD_TTL_MS) return knownOld.photos;
+  try {
+    const res = (await cloudinary.search
+      .expression(`tags=${KNOWN_OLD_TAG}`)
+      .with_field("context")
+      .max_results(500)
+      .execute()) as { resources: CldResource[] };
+    const photos = res.resources
+      .map((r) => ctxOf(r))
+      .filter((c) => c.phash)
+      .map((c) => ({ phash: c.phash, caption: c.caption || "a past disaster" }));
+    knownOld = { at: Date.now(), photos };
+    return photos;
+  } catch {
+    return knownOld?.photos ?? []; // the check is a bonus; never block triage on it
   }
 }
 
@@ -317,15 +347,17 @@ export async function triage(input: TriageInput): Promise<Report> {
     locationSource = fromExif ? "exif" : "missing";
   }
 
-  const [findings, existing, thumbBytes] = await Promise.all([
+  const [findings, existing, thumbBytes, library] = await Promise.all([
     getFindings(analysisUrl(input.publicId, input.resourceType), input.note),
     listReports(),
     measureBytes(thumbUrl({ publicId: input.publicId, resourceType: input.resourceType })),
+    knownOldLibrary(),
   ]);
 
   const createdAt = asset.created_at;
   const oldPhoto = oldPhotoReason(exifDate(asset.image_metadata), new Date(createdAt));
-  const reviewReasons = [...aiReviewReasons(findings), ...(oldPhoto ? [oldPhoto] : [])];
+  const recycled = knownOldReason(asset.phash ?? null, library);
+  const reviewReasons = [...aiReviewReasons(findings), ...(recycled ? [recycled] : []), ...(oldPhoto ? [oldPhoto] : [])];
   const firstPass = scoreReport({ findings, corroborations: 0, reviewReasons });
   const match = matchReport(
     { lat, lng, phash: asset.phash ?? null, primaryCategory: firstPass.primaryCategory, createdAt },
@@ -366,6 +398,7 @@ export async function triage(input: TriageInput): Promise<Report> {
     aiMode: findings.mode,
     phash: asset.phash ?? null,
     reporterHash: input.reporterHash ?? null,
+    history: addHistory([], "filed", new Date(createdAt)),
   };
   const report = await save(draft);
 
@@ -387,7 +420,7 @@ async function getReport(publicId: string, resourceType: "image" | "video"): Pro
 
 export async function setStatus(publicId: string, resourceType: "image" | "video", status: Status): Promise<Report> {
   const target = await getReport(publicId, resourceType);
-  return save({ ...target, status });
+  return save({ ...target, status, history: addHistory(target.history, status as HistoryAction) });
 }
 
 /**
@@ -405,7 +438,13 @@ export async function setLocation(
 ): Promise<Report> {
   const target = await getReport(publicId, resourceType);
   const firstLocation = target.lat === null;
-  const located: Report = { ...target, lat, lng, locationSource: source };
+  const located: Report = {
+    ...target,
+    lat,
+    lng,
+    locationSource: source,
+    history: addHistory(target.history, source === "whatsapp_pin" ? "wa_pin" : "pinned"),
+  };
   if (!firstLocation || target.duplicateOf) return save(located);
 
   const existing = await listReports();
