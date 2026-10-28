@@ -8,7 +8,7 @@ tell them first (or ask them to make the change).
 |---|---|---|
 | 1. AI & triage brain | **Arpit** | Raahat's judgements are right, explainable and hard to fool |
 | 2. Frontend & UX | **Arpan** | It looks and feels like a real product a control room would trust |
-| 3. Cloudinary, WhatsApp & deployment | **Garv** | Every Cloudinary feature works live, and the demo never goes down |
+| 3. Cloudinary, Telegram & deployment | **Garv** | Every Cloudinary feature works live, and the demo never goes down |
 | 4. Research, testing, docs & pitch | **Aviraj** | We can prove it works, and judges understand why it matters |
 
 ---
@@ -36,22 +36,24 @@ tell them first (or ask them to make the change).
    a "new report" flash when one arrives, sticky detail panel on desktop, a usable layout on a phone.
 2. **Offline sending on the report page:** if the upload fails (no signal), keep the photo in the browser and
    retry automatically when the connection comes back, with a visible "waiting for signal" state.
-3. **Landing page that tells the story in 10 seconds:** live counts on the gauge staff, the WhatsApp steps,
+3. **Landing page that tells the story in 10 seconds:** live counts on the gauge staff, the Telegram steps,
    a 3-step visual of one photo becoming a ranked report.
 4. **Accessibility and small screens:** visible focus, no horizontal scroll at 360 px, reduced motion respected,
    Hindi text never clipped. Dark mode toggle.
 
-## Lane 3: Cloudinary, WhatsApp & deployment (Garv)
+## Lane 3: Cloudinary, Telegram & deployment (Garv)
 
-**Owns:** `src/lib/cld-url.ts`, `src/lib/cloudinary.ts`, `src/lib/reports.ts`, `src/lib/whatsapp.ts`,
-`src/lib/geocode.ts`, `src/app/api/*`, `tests/whatsapp.test.ts`, `.env.example`, Vercel and Twilio settings
+**Owns:** `src/lib/cld-url.ts`, `src/lib/cloudinary.ts`, `src/lib/reports.ts`, `src/lib/telegram.ts`, `src/lib/check.ts`, `src/lib/whatsapp.ts`,
+`src/lib/geocode.ts`, `src/app/api/*`, `tests/telegram.test.ts`, `tests/whatsapp.test.ts`, `.env.example`, Vercel and Telegram bot settings
 
 **Make it extraordinary:**
-1. **WhatsApp live:** Twilio sandbox webhook → `/api/whatsapp`, env vars in Vercel, test photo → reply →
-   location pin → report on the map. Fix anything that breaks with real Twilio traffic.
+1. **Telegram live:** create the bot with @BotFather, add `TELEGRAM_*` env vars in Vercel, run
+   `npm run telegram:setup`, then test photo → "Send my location" → reply with tracking link → report on the map.
+   Forward a photo to check the fact-check reply. Fix anything that breaks with real Telegram traffic.
 2. **Private originals:** upload as `authenticated` and sign delivery URLs for originals and face-revealed
    images (fixes a "known limit" in the README).
-3. **Alert card v2:** a better-designed WhatsApp card (logo, severity colour band, QR to the report).
+3. **Instagram account:** create it, set `INSTAGRAM_HANDLE`, and post the fact-check card (from `/v/<id>`) for each
+   report the control room verifies or marks false. Never post an undecided report.
 4. **Demo safety:** `/api/health` green, AI quota checked, preview links viewable (Vercel → Deployment
    Protection off for previews), env vars documented. After judging: move the Vercel project so everyone has access.
 

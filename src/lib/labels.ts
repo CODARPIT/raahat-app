@@ -1,7 +1,7 @@
 // Human-readable labels shared by the UI, the score breakdown and the alert card.
 // Safe to import on client and server.
 
-import type { Category, LocationSource, WaterDepth } from "./types";
+import type { Category, Channel, LocationSource, WaterDepth } from "./types";
 
 export const CATEGORY_LABEL: Record<Category, string> = {
   trapped_or_injured: "People trapped or injured",
@@ -29,10 +29,13 @@ export const DEPTH_LABEL: Record<WaterDepth, string> = {
   unknown: "Can't tell",
 };
 
+export const CHANNEL_LABEL: Record<Channel, string> = { web: "Web", whatsapp: "WhatsApp", telegram: "Telegram" };
+
 export const LOCATION_SOURCE_LABEL: Record<LocationSource, string> = {
   gps: "Reporter's GPS",
   map_pin: "Reporter tapped the map",
   whatsapp_pin: "WhatsApp location pin",
+  telegram_pin: "Telegram location pin",
   exif: "From the photo's GPS data",
   coordinator: "Pinned by the control room",
   missing: "No location yet",

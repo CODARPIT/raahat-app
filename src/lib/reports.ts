@@ -14,7 +14,16 @@ import { addHistory, decodeHistory, encodeHistory, type HistoryAction } from "./
 import { errorMessage } from "./errors";
 import { mergeReports } from "./merge";
 import { placeHint } from "./place";
-import { aiReviewReasons, knownOldReason, matchReport, scoreReport, type Candidate, type KnownOldPhoto } from "./triage";
+import {
+  aiReviewReasons,
+  DUPLICATE_PHASH_MAX,
+  knownOldReason,
+  matchReport,
+  phashDistance,
+  scoreReport,
+  type Candidate,
+  type KnownOldPhoto,
+} from "./triage";
 import { getFindings } from "./vision";
 import {
   CATEGORIES,
@@ -53,7 +62,7 @@ function ctxOf(r: CldResource): Ctx {
 const num = (v: string | undefined, d = 0) => (v !== undefined && v !== "" && !Number.isNaN(Number(v)) ? Number(v) : d);
 const numOrNull = (v: string | undefined) => (v !== undefined && v !== "" && !Number.isNaN(Number(v)) ? Number(v) : null);
 
-const LOCATION_SOURCES: LocationSource[] = ["gps", "map_pin", "whatsapp_pin", "exif", "coordinator", "missing"];
+const LOCATION_SOURCES: LocationSource[] = ["gps", "map_pin", "whatsapp_pin", "telegram_pin", "exif", "coordinator", "missing"];
 const REASON_SEP = " ; ";
 
 /** Reports written before review reasons were stored only kept a flag. */
@@ -94,7 +103,7 @@ export function toReport(r: CldResource): Report | null {
     resourceType: r.resource_type,
     createdAt: r.created_at,
     updatedAt: c.upd || r.created_at,
-    channel: c.ch === "whatsapp" ? "whatsapp" : "web",
+    channel: c.ch === "whatsapp" || c.ch === "telegram" ? c.ch : "web",
     lat: located ? lat : null,
     lng: located ? lng : null,
     locationSource: located
@@ -173,7 +182,7 @@ function toTags(r: Report): string[] {
     ...(r.needsReview ? ["needs_review"] : []),
     ...(r.duplicateOf ? ["duplicate"] : []),
     ...(r.lat === null ? ["no_location"] : []),
-    ...(r.channel === "whatsapp" ? ["ch_whatsapp"] : []),
+    ...(r.channel !== "web" ? [`ch_${r.channel}`] : []),
   ];
 }
 
@@ -326,7 +335,7 @@ export interface TriageInput {
   reporterHash?: string | null;
 }
 
-/** The whole pipeline for one fresh upload, shared by web and WhatsApp intake. */
+/** The whole pipeline for one fresh upload, shared by web, WhatsApp and Telegram intake. */
 export async function triage(input: TriageInput): Promise<Report> {
   const isImage = input.resourceType === "image";
   const asset = (await cloudinary.api.resource(input.publicId, {
@@ -455,4 +464,56 @@ export async function setLocation(
   const saved = await save({ ...located, corroborations: target.corroborations + match.corroborates.length });
   await bump(existing.filter((r) => match.corroborates.includes(r.publicId)));
   return saved;
+}
+
+// Ids the fact-check page looked up and didn't find, so made-up links can't drain the Admin API quota.
+const misses = new Map<string, number>();
+const MISS_TTL_MS = 5 * 60_000;
+
+/**
+ * One report for the public fact-check page, or null. The (cached) Search list comes
+ * first because Instagram traffic must not burn the hourly Admin API quota.
+ */
+export async function findReport(publicId: string): Promise<Report | null> {
+  const listed = (await listReports().catch(() => [] as Report[])).find((r) => r.publicId === publicId);
+  if (listed) return listed;
+  const missedAt = misses.get(publicId);
+  if (missedAt && Date.now() - missedAt < MISS_TTL_MS) return null;
+  for (const resourceType of ["image", "video"] as const) {
+    try {
+      return await getReport(publicId, resourceType);
+    } catch {
+      // not this type, or not a report
+    }
+  }
+  misses.set(publicId, Date.now());
+  if (misses.size > CACHE_MAX) misses.delete(misses.keys().next().value!);
+  return null;
+}
+
+export interface PhotoMatch {
+  /** Caption of a known recycled photo it matches, e.g. "Bihar floods, August 2017". */
+  knownOld: string | null;
+  /** Reports of the same photo, closest first; rejected ones included, they are the debunks. */
+  reports: Report[];
+}
+
+/** "Is this viral photo real?": compare a perceptual hash with every report and the known-old library. */
+export async function matchPhoto(phash: string): Promise<PhotoMatch> {
+  const [reports, library] = await Promise.all([listReports(500), knownOldLibrary()]);
+  const close = reports
+    .filter((r) => r.phash && phashDistance(phash, r.phash) <= DUPLICATE_PHASH_MAX)
+    .sort((a, b) => phashDistance(phash, a.phash!) - phashDistance(phash, b.phash!));
+  // A duplicate points at its primary; show the primary once.
+  const seen = new Set<string>();
+  const primaries: Report[] = [];
+  for (const r of close) {
+    const primary = (r.duplicateOf && reports.find((p) => p.publicId === r.duplicateOf)) || r;
+    if (!seen.has(primary.publicId)) {
+      seen.add(primary.publicId);
+      primaries.push(primary);
+    }
+  }
+  const old = knownOldReason(phash, library);
+  return { knownOld: old ? old.replace(/^Matches an older photo: /, "") : null, reports: primaries.slice(0, 3) };
 }

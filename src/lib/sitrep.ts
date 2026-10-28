@@ -2,7 +2,7 @@
 // that district officials can open in Excel or attach to an email. Pure, so it is
 // unit-tested; safe to import on client and server.
 
-import { CATEGORY_LABEL, DEPTH_LABEL, LOCATION_SOURCE_LABEL } from "./labels";
+import { CATEGORY_LABEL, CHANNEL_LABEL, DEPTH_LABEL, LOCATION_SOURCE_LABEL } from "./labels";
 import { isLocated, type Category, type Report, type Severity } from "./types";
 
 /** Same order as the control-room queue: review last, then score, then newest. */
@@ -85,7 +85,7 @@ export function reportsToCsv(reports: Report[]): string {
     r.reviewReasons.join("; "),
     r.summary,
     r.note,
-    r.channel === "whatsapp" ? "WhatsApp" : "Web",
+    CHANNEL_LABEL[r.channel],
     r.aiMode === "live" ? "Cloudinary AI Vision" : "Rule-based",
     r.publicId,
   ]);

@@ -94,3 +94,34 @@ export function alertCardUrl(r: Report) {
   ];
   return still(r.publicId, r.resourceType, chain);
 }
+
+// ── Fact-check card (Instagram) ──────────────────────────────────────────────
+
+const CARD_BAND: Record<"verified" | "false", { text: string; hex: string }> = {
+  verified: { text: "VERIFIED BY RAAHAT", hex: "138808" },
+  false: { text: "FALSE - DO NOT SHARE", hex: "B3122E" },
+};
+
+/**
+ * A 1080×1350 (Instagram portrait) fact-check card built by URL: faces pixelated, a
+ * green "verified" or red "false" band, what and when, and the link anyone can open
+ * to check the card is genuine. `download` asks the CDN to send it as a file.
+ */
+export function factCardUrl(
+  r: Pick<Report, "publicId" | "resourceType">,
+  card: { verdict: "verified" | "false"; what: string; when: string; link: string },
+  download = false,
+) {
+  const band = CARD_BAND[card.verdict];
+  const chain = [
+    PRIVACY,
+    "c_fill,g_auto,w_1080,h_1350",
+    card.verdict === "false" ? "e_grayscale" : "e_brightness:-5",
+    `l_text:Arial_64_bold:${encodeOverlayText(band.text)},co_white,b_rgb:${band.hex},w_1080,c_fit/fl_layer_apply,g_north,y_0`,
+    `l_text:Arial_46_bold:${encodeOverlayText(card.what)},co_white,b_rgb:000000c0,w_1000,c_fit/fl_layer_apply,g_south_west,x_40,y_190`,
+    `l_text:Arial_34:${encodeOverlayText(card.when)},co_white,b_rgb:000000c0/fl_layer_apply,g_south_west,x_40,y_130`,
+    `l_text:Arial_32_bold:${encodeOverlayText("Check it at " + card.link)},co_rgb:FFE9A8,b_rgb:000000c0/fl_layer_apply,g_south_west,x_40,y_60`,
+    `f_jpg,q_auto${download ? ",fl_attachment:raahat-fact-check" : ""}`,
+  ];
+  return still(r.publicId, r.resourceType, chain);
+}

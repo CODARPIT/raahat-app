@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "seed": "tsx scripts/seed.ts",
-    "seed:known-old": "tsx scripts/seed-known-old.ts"
+    "seed:known-old": "tsx scripts/seed-known-old.ts",
+    "telegram:setup": "tsx scripts/telegram-setup.ts"
   },
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
