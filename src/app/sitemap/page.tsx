@@ -9,6 +9,7 @@ const SECTIONS: { heading: string; links: { href: string; label: string; note: s
     links: [
       { href: "/report", label: "Report an incident", note: "Send a photo and your location, in Hindi or English" },
       { href: "/map", label: "Live situation map", note: "Public map with faces pixelated and locations rounded" },
+      { href: "/check", label: "Check a viral photo", note: "Find out if a photo or reel was verified, or is an old photo" },
       { href: "/safety", label: "Safety advisories", note: "Do's and don'ts for floods, earthquakes, cyclones and fire" },
       { href: "/help", label: "Help & FAQs", note: "How reporting works and what happens next" },
     ],

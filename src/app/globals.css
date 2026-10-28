@@ -427,7 +427,7 @@ kbd {
 .section-title span { font-weight: 600; color: var(--ink-soft); font-size: 0.75em; }
 .section-lead { color: var(--ink-soft); font-size: 1.0625rem; max-width: 60ch; margin: 12px 0 0; }
 
-.services { list-style: none; padding: 0; margin: 28px 0 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+.services { list-style: none; padding: 0; margin: 28px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
 .service {
   height: 100%; display: flex; flex-direction: column; gap: 6px; padding: 22px; text-decoration: none;
   background: var(--paper); border: 1px solid var(--line); border-top: 4px solid var(--teal); border-radius: var(--r-sm);
@@ -672,3 +672,69 @@ body > header, body > nav, body > footer, body > .page, body > .access-bar, body
 .related a:hover { border-color: var(--teal); }
 @media (max-width: 980px) { .advisories, .related ul { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .advisories, .related ul { grid-template-columns: 1fr; } }
+
+/* ── Fact check, photo check, Telegram ──────────────────── */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.muted { color: var(--ink-soft); }
+.lead { font-size: 1.0625rem; }
+.verdict { --v: var(--sev-moderate); display: flex; gap: 18px; align-items: flex-start; margin: 0 0 18px; padding: 18px 20px; border: 1px solid var(--line); border-left: 8px solid var(--v); border-radius: var(--r-sm); background: var(--paper); }
+.verdict-verified { --v: var(--india-green); }
+.verdict-false { --v: var(--sev-critical); }
+.verdict-pending { --v: var(--sev-high); }
+.verdict-icon { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--v); color: #fff; font-size: 1.75rem; font-weight: 800; line-height: 1; }
+.verdict h2 { margin: 0; font-size: 1.375rem; color: var(--v); }
+.verdict p { margin: 4px 0 0; }
+.verdict-id { font-size: 0.875rem; color: var(--ink-soft); }
+.notice-inline { padding: 12px 16px; border-radius: var(--r-sm); background: var(--mist); border: 1px solid var(--line); }
+.notice-danger { border-color: var(--sev-critical); font-weight: 600; }
+.fact-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; margin: 18px 0; }
+.fact-photo { margin: 0; }
+.fact-photo img { display: block; width: 100%; border-radius: var(--r-sm); border: 1px solid var(--line); }
+.fact-photo.is-false img { filter: grayscale(1); }
+.fact-photo figcaption { font-size: 0.8125rem; color: var(--ink-soft); margin-top: 6px; }
+.fact-details { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 18px 0; }
+.fact-grid .fact-details { margin: 0; }
+.fact-details dt { font-weight: 700; color: var(--ink-soft); }
+.fact-details dd { margin: 0; }
+.fact-checks { list-style: none; padding: 0; margin: 0 0 18px; display: grid; gap: 8px; }
+.fact-checks li { display: flex; gap: 10px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--paper); }
+.fact-checks li > span:first-child { font-weight: 800; width: 1em; flex: none; }
+.fact-checks .pass > span:first-child { color: var(--india-green); }
+.fact-checks .fail { border-color: var(--sev-critical); font-weight: 600; }
+.fact-checks .fail > span:first-child { color: var(--sev-critical); }
+.fact-checks .open { color: var(--ink-soft); }
+.verdict h2 { border: 0; padding: 0; }
+.verdict h2::before, .verdict h2::after { content: none; }
+.share-bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 24px; }
+.fact-howto { margin-top: 28px; padding: 16px 20px; border-top: 4px solid var(--saffron); background: var(--paper); border-radius: var(--r-sm); }
+.fact-howto h2 { margin-top: 0; font-size: 1.125rem; }
+.check { display: grid; gap: 18px; margin: 18px 0 28px; }
+.check-pick { display: grid; gap: 12px; justify-items: start; }
+.check-pick img { max-width: min(100%, 360px); max-height: 320px; border-radius: var(--r-sm); border: 1px solid var(--line); }
+.check-pick input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.check-pick label { position: relative; cursor: pointer; }
+.check-pick label[aria-disabled="true"] { opacity: 0.6; cursor: progress; }
+.check-pick label:focus-within { outline: 3px solid var(--saffron); outline-offset: 2px; }
+#fact-check .actions { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 12px; }
+.card-sample { margin: 0; justify-self: center; width: min(100%, 340px); }
+.card-sample-img {
+  position: relative; aspect-ratio: 4 / 5; border-radius: var(--r-sm); overflow: hidden; display: flex; flex-direction: column; justify-content: space-between;
+  background:
+    linear-gradient(180deg, rgb(0 0 0 / 0) 40%, rgb(0 0 0 / 0.75)),
+    repeating-linear-gradient(170deg, #3d6f93 0 14px, #34627f 14px 28px),
+    linear-gradient(#6c8fa8, #2e5875);
+  box-shadow: 0 10px 30px rgb(10 32 56 / 0.25);
+}
+.card-band { background: var(--india-green); color: #fff; font-weight: 800; letter-spacing: 0.04em; text-align: center; padding: 12px 8px; font-size: 1.0625rem; }
+.card-text { display: grid; gap: 6px; padding: 14px; color: #fff; }
+.card-what { font-weight: 800; font-size: 1.0625rem; }
+.card-when { font-size: 0.8125rem; }
+.card-link { font-size: 0.8125rem; font-weight: 700; color: #ffe9a8; }
+.card-sample figcaption { font-size: 0.875rem; color: var(--ink-soft); margin-top: 10px; text-align: center; }
+@media (max-width: 760px) {
+  .fact-grid { grid-template-columns: 1fr; }
+  .fact-details { grid-template-columns: 1fr; gap: 2px; }
+  .fact-details dd { margin-bottom: 8px; }
+  .verdict { gap: 12px; padding: 14px; }
+  .verdict-icon { width: 40px; height: 40px; font-size: 1.25rem; }
+}

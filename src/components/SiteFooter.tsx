@@ -27,6 +27,7 @@ export function SiteFooter() {
           <ul>
             <li><Link href="/report">Report an incident</Link></li>
             <li><Link href="/map">Live situation map</Link></li>
+            <li><Link href="/check">Check a viral photo</Link></li>
             <li><Link href="/respond">Control room (responders)</Link></li>
             <li><Link href="/#how">How Raahat works</Link></li>
             <li><Link href="/#privacy">Privacy and safety</Link></li>

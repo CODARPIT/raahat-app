@@ -6,7 +6,7 @@ import { AccessBar } from "@/components/AccessBar";
 import { Seal } from "@/components/Seal";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteNav } from "@/components/SiteNav";
-import { A11Y_KEY, THEME_KEY } from "@/lib/constants";
+import { A11Y_KEY, SITE_URL, THEME_KEY } from "@/lib/constants";
 import "./globals.css";
 
 // Mukta (Ek Type, Mumbai) carries Latin and Devanagari in one family,
@@ -18,7 +18,6 @@ const mukta = Mukta({
   display: "swap",
 });
 
-const SITE_URL = process.env.PUBLIC_BASE_URL ?? "https://raahat-kappa.vercel.app";
 const DESCRIPTION = "Citizen disaster reports, triaged by Cloudinary AI and delivered to responders on any network.";
 
 export const metadata: Metadata = {

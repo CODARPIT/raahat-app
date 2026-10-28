@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/", label: "Home" },
   { href: "/report", label: "Report an incident" },
   { href: "/map", label: "Live situation map" },
+  { href: "/check", label: "Fact check" },
   { href: "/respond", label: "Control room" },
   { href: "/safety", label: "Safety advisories" },
   { href: "/help", label: "Help & FAQs" },

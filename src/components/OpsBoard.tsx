@@ -12,8 +12,9 @@ import {
   type Bandwidth,
 } from "@/lib/cld-url";
 import { HISTORY_LABEL } from "@/lib/history";
-import { CATEGORY_LABEL, DEPTH_LABEL, LOCATION_SOURCE_LABEL } from "@/lib/labels";
+import { CATEGORY_LABEL, CHANNEL_LABEL, DEPTH_LABEL, LOCATION_SOURCE_LABEL } from "@/lib/labels";
 import { isLocated, type Report, type Severity, type Status } from "@/lib/types";
+import { shortId } from "@/lib/verify";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
@@ -342,7 +343,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                   <span className="sub">
                     {fresh.has(r.publicId) && <span className="pill pill-new">New</span>}{" "}
                     {!isLocated(r) && <span className="pill pill-warn">No location</span>}{" "}
-                    {r.channel === "whatsapp" && <span className="pill">WhatsApp</span>}{" "}
+                    {r.channel !== "web" && <span className="pill">{CHANNEL_LABEL[r.channel]}</span>}{" "}
                     {ago(r.createdAt)}
                     {r.corroborations > 0 && `, ${r.corroborations + 1} reports`}
                     {r.status !== "new" && `, ${r.status}`}
@@ -388,7 +389,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
               <p className="hint">
                 <span className="sev sev-text" data-sev={selected.severity}>{selected.severity}, score {selected.score}</span>{" "}
                 {ago(selected.createdAt)}
-                {selected.channel === "whatsapp" && ", via WhatsApp"}
+                {selected.channel !== "web" && `, via ${CHANNEL_LABEL[selected.channel]}`}
               </p>
               <h2>{CATEGORY_LABEL[selected.primaryCategory]}</h2>
               <p>{selected.summary}</p>
@@ -488,7 +489,8 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                 <img src={enhancedUrl(selected, blur)} alt={`Report photo${blur ? ", faces pixelated" : ""}, auto-enhanced`} />
               )}
               <div className="row">
-                <a className="btn" href={alertCardUrl(selected)} target="_blank" rel="noreferrer">Open WhatsApp alert card</a>
+                <a className="btn" href={alertCardUrl(selected)} target="_blank" rel="noreferrer">Alert card</a>
+                <a className="btn" href={`/v/${shortId(selected.publicId)}`} target="_blank" rel="noreferrer" title="Public page and Instagram card for this report">Fact-check page</a>
                 {mode === "responder" && selected.resourceType === "image" && (
                   <button className="btn" onClick={() => setReveal((v) => !v)}>{reveal ? "Pixelate faces" : "Show faces"}</button>
                 )}

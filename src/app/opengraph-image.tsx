@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
 
-// The preview card shown when someone shares a Raahat link on WhatsApp, X or LinkedIn.
+// The preview card shown when someone shares a Raahat link on Telegram, WhatsApp, X or LinkedIn.
 export const alt = "Raahat: citizen disaster reporting and triage portal";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -28,7 +28,7 @@ export default async function OgImage() {
               Citizen Disaster Reporting &amp; Triage Portal
             </div>
             <div style={{ fontSize: 27, marginTop: 24, opacity: 0.85 }}>
-              One photo from a citizen, ranked by Cloudinary AI for the control room. Duplicates merged, faces pixelated, works on 2G and WhatsApp.
+              One photo from a citizen, ranked by Cloudinary AI for the control room. Duplicates merged, faces pixelated, fake photos called out. Works on 2G.
             </div>
           </div>
         </div>

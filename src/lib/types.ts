@@ -25,8 +25,8 @@ export type Category = (typeof CATEGORIES)[number];
 export type Severity = "critical" | "high" | "moderate" | "low";
 export type Status = "new" | "verified" | "dispatched" | "resolved" | "rejected";
 export type WaterDepth = "none" | "ankle" | "knee" | "waist" | "chest_or_more" | "unknown";
-export type LocationSource = "gps" | "map_pin" | "whatsapp_pin" | "exif" | "coordinator" | "missing";
-export type Channel = "web" | "whatsapp";
+export type LocationSource = "gps" | "map_pin" | "whatsapp_pin" | "telegram_pin" | "exif" | "coordinator" | "missing";
+export type Channel = "web" | "whatsapp" | "telegram";
 
 /** One line of "Why this score". `add` lines sum to the raw score; `adjust` lines are the multiplier and caps. */
 export interface ScoreLine {
@@ -82,7 +82,7 @@ export interface Report {
   thumbBytes: number;
   aiMode: "live" | "demo";
   phash: string | null;
-  reporterHash: string | null; // sha256 of a WhatsApp number, never the number itself
+  reporterHash: string | null; // salted hash of a WhatsApp number or Telegram chat, never the number itself
   history: HistoryEntry[]; // audit trail: filed, status changes, pins (newest last)
 }
 

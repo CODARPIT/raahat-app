@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Gauge } from "@/components/Gauge";
 import { CATEGORY_LABEL, thumbUrl } from "@/lib/cld-url";
 import { REPORT_FOLDER, REPORT_TAG } from "@/lib/constants";
+import { downscale } from "@/lib/downscale";
 import { SEVERITY_LABEL, T, type Lang } from "@/lib/i18n";
 import { listItems, online, OfflineError, putItem, removeItem, type OutboxMeta } from "@/lib/outbox";
 import type { Report } from "@/lib/types";
@@ -20,26 +21,7 @@ type Loc = { lat: number; lng: number; accuracy?: number; source: "gps" | "map_p
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
 const API_KEY = process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY;
-const MAX_SIDE = 1600;
 const MAX_BYTES = 40_000_000;
-
-/** Downscale on the phone before upload: a 12 MP photo becomes a few hundred KB. */
-async function downscale(file: File): Promise<Blob> {
-  if (!file.type.startsWith("image/")) return file;
-  try {
-    const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
-    const scale = Math.min(1, MAX_SIDE / Math.max(bmp.width, bmp.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bmp.width * scale);
-    canvas.height = Math.round(bmp.height * scale);
-    canvas.getContext("2d")!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
-    bmp.close();
-    const blob = await new Promise<Blob | null>((done) => canvas.toBlob(done, "image/jpeg", 0.85));
-    return blob && blob.size < file.size ? blob : file;
-  } catch {
-    return file; // e.g. a HEIC the browser can't decode; Cloudinary converts it instead
-  }
-}
 
 /** Signed direct upload, so the camera opens in one tap instead of inside a widget. */
 async function uploadPhoto(body: Blob): Promise<Upload> {

@@ -57,9 +57,19 @@ const FAQS: { q: string; qHi: string; a: React.ReactNode }[] = [
     a: <>A simple, visible score: danger to life first, then how fast the hazard spreads, then whether help can reach the spot. Control rooms can see every point that went into each score.</>,
   },
   {
-    q: "Can I report on WhatsApp?",
-    qHi: "क्या मैं व्हाट्सऐप पर रिपोर्ट कर सकता हूँ?",
-    a: <>Yes, when WhatsApp reporting is switched on: send a photo and your location pin to the Raahat number shown on the <Link href="/#whatsapp">home page</Link>, in either order.</>,
+    q: "Can I report on Telegram?",
+    qHi: "क्या मैं टेलीग्राम पर रिपोर्ट कर सकता हूँ?",
+    a: <>Yes, when the Raahat bot is switched on: open the bot shown on the <Link href="/#telegram">home page</Link>, send a photo, then tap &ldquo;Send my location&rdquo;. It replies with the priority and a link to follow your report.</>,
+  },
+  {
+    q: "How do I know if a viral photo or reel is real?",
+    qHi: "कैसे पता करें कि वायरल फ़ोटो या रील सच है?",
+    a: <>Upload it (or a screenshot of a clear frame) on <Link href="/check">Check a viral photo</Link>. Raahat tells you if it matches a report the control room verified or marked false, or a known old photo.</>,
+  },
+  {
+    q: "I saw a \"Verified by Raahat\" post. Is it genuine?",
+    qHi: "मैंने \"राहत द्वारा सत्यापित\" पोस्ट देखी। क्या वह असली है?",
+    a: <>Every genuine Raahat card has a link to a fact-check page on this site (raahat-kappa.vercel.app/v/…). Open it. If it doesn&rsquo;t show a page with the same verdict, the card is fake. Raahat never asks for money or personal details.</>,
   },
 ];
 
