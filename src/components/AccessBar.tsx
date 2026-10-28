@@ -63,6 +63,11 @@ export function AccessBar() {
     <div className="access-bar">
       <div className="access-inner">
         <a href="#main" className="skip-link">Skip to main content</a>
+        <nav className="access-links" aria-label="Accessibility and site links">
+          <a href="#main">Skip to main content</a>
+          <a href="/accessibility">Screen reader access</a>
+          <a href="/sitemap">Sitemap</a>
+        </nav>
         <p className="access-help">
           <span>Emergency</span> <a href="tel:112" className="num">112</a>
           <span className="sep" aria-hidden>·</span>

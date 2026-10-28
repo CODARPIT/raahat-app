@@ -226,6 +226,44 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* ── Safety advisories ──────────────────────────────── */}
+      <section className="section" aria-labelledby="adv-h">
+        <div className="section-inner">
+          <h2 id="adv-h" className="section-title">Safety advisories <span lang="hi">· सुरक्षा सलाह</span></h2>
+          <p className="section-lead">What to do before, during and after a disaster, in plain words.</p>
+          <ul className="advisories">
+            {[
+              { id: "flood", t: "Floods", hi: "बाढ़", tip: "Move to higher ground. Never walk or drive through moving water." },
+              { id: "earthquake", t: "Earthquakes", hi: "भूकंप", tip: "Drop, cover and hold on. Don't use lifts." },
+              { id: "cyclone", t: "Cyclones", hi: "चक्रवात", tip: "Stay indoors. A sudden calm may be the eye of the storm." },
+              { id: "fire", t: "Fire", hi: "आग", tip: "Stay low under smoke. Call 101 or 112." },
+            ].map((a) => (
+              <li key={a.id}>
+                <Link href={`/safety#${a.id}`} className="advisory">
+                  <span className="advisory-title">{a.t} <span lang="hi">· {a.hi}</span></span>
+                  <span className="advisory-tip">{a.tip}</span>
+                  <span className="service-cta">Read the advisory <span aria-hidden>→</span></span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* ── Related official links ─────────────────────────── */}
+      <section className="related" aria-labelledby="rel-h">
+        <div className="section-inner">
+          <h2 id="rel-h">Related official links</h2>
+          <ul>
+            <li><a href="https://ndma.gov.in" target="_blank" rel="noreferrer">National Disaster Management Authority<span>ndma.gov.in</span></a></li>
+            <li><a href="https://mausam.imd.gov.in" target="_blank" rel="noreferrer">India Meteorological Department<span>mausam.imd.gov.in</span></a></li>
+            <li><a href="https://sachet.ndma.gov.in" target="_blank" rel="noreferrer">Sachet: official disaster alerts<span>sachet.ndma.gov.in</span></a></li>
+            <li><a href="https://ndrf.gov.in" target="_blank" rel="noreferrer">National Disaster Response Force<span>ndrf.gov.in</span></a></li>
+          </ul>
+          <p className="hint">External websites open in a new tab. Raahat is not affiliated with these organisations.</p>
+        </div>
+      </section>
+
       {/* ── Who it's for ───────────────────────────────────── */}
       <section className="section section-alt" aria-labelledby="who-h">
         <div className="section-inner">

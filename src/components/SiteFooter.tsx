@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { LAST_REVIEWED } from "./InfoPage";
+import { Seal } from "./Seal";
 
 // Public emergency numbers in India. 112 is the single emergency number;
 // 1078 is the NDMA disaster helpline; 1070 reaches the state emergency operations centre.
@@ -41,21 +43,31 @@ export function SiteFooter() {
             ))}
           </ul>
         </section>
-        <section aria-labelledby="f-privacy">
-          <h2 id="f-privacy">Privacy</h2>
+        <section aria-labelledby="f-policies">
+          <h2 id="f-policies">Website policies</h2>
           <ul>
-            <li>Faces are pixelated automatically on public images.</li>
-            <li>Public locations are rounded to about 110 m.</li>
-            <li>Reporters&rsquo; notes and phone numbers are never shown publicly.</li>
+            <li><Link href="/accessibility">Accessibility statement</Link></li>
+            <li><Link href="/privacy">Privacy policy</Link></li>
+            <li><Link href="/disclaimer">Disclaimer</Link></li>
+            <li><Link href="/help">Help &amp; FAQs</Link></li>
+            <li><Link href="/sitemap">Sitemap</Link></li>
           </ul>
         </section>
       </div>
       <div className="footer-base">
-        <p>
-          Raahat is a project built for Hacktober HackDays 2026 (Tech for Social Good). It is <strong>not an official
-          government service</strong>. If anyone&rsquo;s life is in danger, call <a href="tel:112">112</a>.
+        <div className="footer-brand">
+          <Seal size={44} title="" id="seal-footer" />
+          <p>
+            Content owned and maintained by the Raahat project team. Raahat is a project built for Hacktober HackDays 2026
+            (Tech for Social Good) and is <strong>not an official government service</strong>. If anyone&rsquo;s life is in
+            danger, call <a href="tel:112">112</a>.
+          </p>
+        </div>
+        <p className="footer-meta">
+          Last reviewed: {LAST_REVIEWED}
+          <br />
+          Images and AI by Cloudinary · Maps © OpenStreetMap contributors
         </p>
-        <p>Images and AI by Cloudinary · Maps © OpenStreetMap contributors</p>
       </div>
     </footer>
   );
