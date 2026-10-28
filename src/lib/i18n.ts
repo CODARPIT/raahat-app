@@ -1,81 +1,50 @@
+// Languages the website is offered in. The dictionaries live in src/locales (one file
+// per language, loaded on the server); this file is safe to import anywhere.
+
+/** Language stored on a report. The AI writes every summary in English and Hindi. */
 export type Lang = "en" | "hi";
 
-export const T = {
-  en: {
-    reportTitle: "Report what you see",
-    reportLead: "One photo and your location. Responders see it in under a minute, with faces blurred.",
-    takePhoto: "Take a photo",
-    gallery: "Choose from gallery",
-    retake: "Retake photo",
-    uploading: "Uploading…",
-    location: "Location",
-    locating: "Finding your location…",
-    locationFound: "Location found",
-    locationFailed: "Couldn't get your location. Turn on GPS, or type the nearest landmark below and a responder will place it.",
-    useLocation: "Use my location",
-    noteLabel: "What is happening? (optional)",
-    notePlaceholder: "e.g. Water up to the waist, 2 families on the roof of the school",
-    send: "Send report",
-    sending: "Sending to responders…",
-    sent: "Report sent",
-    priority: "Priority",
-    another: "Report something else",
-    safety: "If someone's life is in danger, also call 112.",
-    needPhoto: "Add a photo first.",
-    dontKnow: "I don't know",
-    tapMap: "Or tap your spot on the map.",
-    describePlace: "Describe the place",
-    describePlaceHint: "Nearest landmark, school, temple, road or village. Responders will place it on the map.",
-    describePlaceholder: "e.g. Near Gandhi School, Rampur village",
-    noLocationNote: "No problem. Your report still reaches responders; they will place it on the map.",
-    pendingLocation: "Responders will add the location from your description.",
-    photoSavedOffline: "No signal right now. Your photo is saved on this phone and will be sent with your report when the connection returns.",
-    savedTitle: "Saved on your phone",
-    savedBody: "There's no signal right now. Raahat will send your report automatically as soon as the connection returns. Keep this page open, or open it again later.",
-    waitingSignal: "Waiting for signal",
-    sendingSaved: "Sending your saved report…",
-    waiting: (n: number) => `${n} saved ${n === 1 ? "report is" : "reports are"} waiting for signal and will send automatically.`,
-    tryNow: "Try sending now",
-  },
-  hi: {
-    reportTitle: "जो दिख रहा है, बताइए",
-    reportLead: "एक फ़ोटो और आपकी लोकेशन। एक मिनट से कम में राहत दल तक पहुँचेगी, चेहरे धुंधले करके।",
-    takePhoto: "फ़ोटो खींचें",
-    gallery: "गैलरी से चुनें",
-    retake: "दोबारा फ़ोटो खींचें",
-    uploading: "अपलोड हो रही है…",
-    location: "लोकेशन",
-    locating: "आपकी लोकेशन ढूँढ रहे हैं…",
-    locationFound: "लोकेशन मिल गई",
-    locationFailed: "लोकेशन नहीं मिली। GPS चालू करें, या नीचे सबसे पास की पहचान वाली जगह लिखें।",
-    useLocation: "मेरी लोकेशन लें",
-    noteLabel: "क्या हो रहा है? (वैकल्पिक)",
-    notePlaceholder: "जैसे: कमर तक पानी, स्कूल की छत पर 2 परिवार फँसे हैं",
-    send: "रिपोर्ट भेजें",
-    sending: "राहत दल को भेज रहे हैं…",
-    sent: "रिपोर्ट भेज दी गई",
-    priority: "प्राथमिकता",
-    another: "कुछ और रिपोर्ट करें",
-    safety: "अगर किसी की जान ख़तरे में है, तो 112 पर भी कॉल करें।",
-    needPhoto: "पहले फ़ोटो जोड़ें।",
-    dontKnow: "मुझे नहीं पता",
-    tapMap: "या नक़्शे पर अपनी जगह पर टैप करें।",
-    describePlace: "जगह के बारे में बताइए",
-    describePlaceHint: "सबसे पास का स्कूल, मंदिर, सड़क या गाँव। राहत दल इसे नक़्शे पर लगाएगा।",
-    describePlaceholder: "जैसे: गांधी स्कूल के पास, रामपुर गाँव",
-    noLocationNote: "कोई बात नहीं। आपकी रिपोर्ट फिर भी राहत दल तक पहुँचेगी; वे इसे नक़्शे पर लगाएँगे।",
-    pendingLocation: "राहत दल आपके बताए पते से लोकेशन जोड़ेगा।",
-    photoSavedOffline: "अभी नेटवर्क नहीं है। आपकी फ़ोटो इसी फ़ोन में सेव है, नेटवर्क आते ही रिपोर्ट के साथ भेज दी जाएगी।",
-    savedTitle: "आपके फ़ोन में सेव हो गई",
-    savedBody: "अभी नेटवर्क नहीं है। नेटवर्क आते ही राहत आपकी रिपोर्ट अपने आप भेज देगा। यह पेज खुला रखें, या बाद में फिर खोलें।",
-    waitingSignal: "नेटवर्क का इंतज़ार",
-    sendingSaved: "आपकी सेव की गई रिपोर्ट भेज रहे हैं…",
-    waiting: (n: number) => `${n} सेव की गई रिपोर्ट नेटवर्क का इंतज़ार कर रही है, अपने आप भेज दी जाएगी।`,
-    tryNow: "अभी भेजकर देखें",
-  },
-} as const;
+// India's most widely read scripts, with the flood- and cyclone-prone states covered
+// (Assamese, Odia, Bengali). Each name is written in its own script.
+export const LOCALES = [
+  { code: "en", name: "English" },
+  { code: "hi", name: "हिन्दी" },
+  { code: "bn", name: "বাংলা" },
+  { code: "as", name: "অসমীয়া" },
+  { code: "or", name: "ଓଡ଼ିଆ" },
+  { code: "mr", name: "मराठी" },
+  { code: "gu", name: "ગુજરાતી" },
+  { code: "pa", name: "ਪੰਜਾਬੀ" },
+  { code: "ta", name: "தமிழ்" },
+  { code: "te", name: "తెలుగు" },
+  { code: "kn", name: "ಕನ್ನಡ" },
+  { code: "ml", name: "മലയാളം" },
+] as const;
 
-export const SEVERITY_LABEL = {
-  en: { critical: "Critical", high: "High", moderate: "Moderate", low: "Low" },
-  hi: { critical: "अति गंभीर", high: "गंभीर", moderate: "मध्यम", low: "कम" },
-} as const;
+export type Locale = (typeof LOCALES)[number]["code"];
+
+export const DEFAULT_LOCALE: Locale = "en";
+export const LANG_COOKIE = "raahat-lang";
+
+export const isLocale = (x: unknown): x is Locale => LOCALES.some((l) => l.code === x);
+
+/** The best of our languages for an Accept-Language header, e.g. "bn-IN,bn;q=0.9,en;q=0.8". */
+export function matchLocale(acceptLanguage: string | null | undefined): Locale {
+  const wanted = (acceptLanguage ?? "")
+    .split(",")
+    .map((part) => {
+      const [tag, q] = part.trim().split(";q=");
+      return { lang: tag.toLowerCase().split("-")[0], q: q === undefined ? 1 : Number(q) || 0 };
+    })
+    .filter((w) => w.lang && w.q > 0)
+    .sort((a, b) => b.q - a.q);
+  return wanted.map((w) => w.lang).find(isLocale) ?? DEFAULT_LOCALE;
+}
+
+/** Fill {placeholders}: fmt("Updated {time} IST", { time: "10:30" }). */
+export function fmt(text: string, vars: Record<string, string | number>): string {
+  return text.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m));
+}
+
+/** Reports keep English or Hindi; other languages read the English AI summary. */
+export const storageLang = (locale: Locale): Lang => (locale === "hi" ? "hi" : "en");

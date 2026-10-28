@@ -6,7 +6,8 @@ import { Gauge } from "@/components/Gauge";
 import { CATEGORY_LABEL, thumbUrl } from "@/lib/cld-url";
 import { REPORT_FOLDER, REPORT_TAG } from "@/lib/constants";
 import { downscale } from "@/lib/downscale";
-import { SEVERITY_LABEL, T, type Lang } from "@/lib/i18n";
+import { useI18n } from "@/components/LocaleProvider";
+import { fmt, storageLang } from "@/lib/i18n";
 import { listItems, online, OfflineError, putItem, removeItem, type OutboxMeta } from "@/lib/outbox";
 import type { Report } from "@/lib/types";
 
@@ -60,8 +61,8 @@ async function postReport(upload: Upload, meta: OutboxMeta): Promise<Report> {
 }
 
 export default function ReportPage() {
-  const [lang, setLang] = useState<Lang>("en");
-  const t = T[lang];
+  const { locale, t: { report: t, severity, nav } } = useI18n();
+  const lang = storageLang(locale); // what the report is stored in; the AI summarises in English and Hindi
   const [upload, setUpload] = useState<Upload | null>(null);
   const [loc, setLoc] = useState<Loc>(null);
   const [locState, setLocState] = useState<"idle" | "locating" | "found" | "failed" | "unknown">("idle");
@@ -151,7 +152,6 @@ export default function ReportPage() {
 
   useEffect(() => {
     locate();
-    if (navigator.language?.startsWith("hi")) setLang("hi");
   }, [locate]);
 
   async function pick(e: React.ChangeEvent<HTMLInputElement>) {
@@ -159,7 +159,7 @@ export default function ReportPage() {
     e.target.value = ""; // so picking the same file again still fires
     if (!file) return;
     if (file.size > MAX_BYTES) {
-      return setError(lang === "hi" ? "फ़ाइल 40 MB से बड़ी है।" : "That file is over 40 MB. Try a photo or a shorter video.");
+      return setError(t.tooBig);
     }
     setError(null);
     setOfflineNote(false);
@@ -215,21 +215,17 @@ export default function ReportPage() {
   }
 
   return (
-    <main className="report-page" lang={lang}>
+    <main className="report-page">
       <nav className="crumbs" aria-label="Breadcrumb">
         <ol>
-          <li><a href="/">{lang === "hi" ? "होम" : "Home"}</a></li>
-          <li aria-current="page">{lang === "hi" ? "घटना की रिपोर्ट करें" : "Report an incident"}</li>
+          <li><a href="/">{nav.home}</a></li>
+          <li aria-current="page">{nav.report}</li>
         </ol>
       </nav>
-      <div className="lang-toggle" role="group" aria-label="Language">
-        <button aria-pressed={lang === "en"} onClick={() => setLang("en")}>English</button>
-        <button aria-pressed={lang === "hi"} onClick={() => setLang("hi")} lang="hi">हिंदी</button>
-      </div>
 
       {waiting > 0 && !queuedId && (
         <p className="outbox-banner" role="status">
-          {flushing ? t.sendingSaved : t.waiting(waiting)}
+          {flushing ? t.sendingSaved : fmt(t.waiting, { n: waiting })}
         </p>
       )}
 
@@ -261,14 +257,14 @@ export default function ReportPage() {
             <div>
               <p className="hint">{t.sent}</p>
               <h2>
-                {t.priority}: <span className="sev sev-text" data-sev={result.severity}>{SEVERITY_LABEL[lang][result.severity]}</span>
+                {t.priority}: <span className="sev sev-text" data-sev={result.severity}>{severity[result.severity]}</span>
               </h2>
-              <p>{lang === "hi" ? result.summaryHi : result.summary}</p>
+              <p lang={lang}>{lang === "hi" ? result.summaryHi : result.summary}</p>
               <p className="hint">
                 {CATEGORY_LABEL[result.primaryCategory]}
-                {result.duplicateOf && (lang === "hi" ? ". यह घटना पहले से दर्ज है, आपकी फ़ोटो जोड़ दी गई।" : ". Already reported; your photo was added to it.")}
+                {result.duplicateOf && `. ${t.duplicate}`}
                 {!result.duplicateOf && result.corroborations > 0 &&
-                  (lang === "hi" ? `. ${result.corroborations} और लोगों ने यही बताया है।` : `. ${result.corroborations} other people reported this too.`)}
+                  `. ${fmt(t.corroborated, { n: result.corroborations })}`}
               </p>
               {result.lat === null && <p className="hint">{t.pendingLocation}</p>}
             </div>
@@ -280,8 +276,8 @@ export default function ReportPage() {
         </section>
       ) : (
         <>
-          <h1>{t.reportTitle}</h1>
-          <p className="lead">{t.reportLead}</p>
+          <h1>{t.title}</h1>
+          <p className="lead">{t.lead}</p>
 
           <div className="field">
             {upload ? (

@@ -70,6 +70,8 @@ tell them first (or ask them to make the change).
    two without location) so the map looks alive on stage.
 4. **Pitch and video:** 3-minute script, recorded backup video of the full flow, and the FAQ answers rehearsed.
    Keep the Notion page in sync with what is actually live.
+5. **Language review:** ask native speakers to check each file in `src/locales/` (start with Bengali,
+   Assamese and Odia, the flood and cyclone states). Fix wording in place; `npm test` checks nothing is missing.
 
 ## Shared files (change only after telling the team)
 

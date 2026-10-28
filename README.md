@@ -113,6 +113,16 @@ Reasons for review: the AI flags screenshots, memes, drawings, photos of screens
 photo's EXIF date is more than 7 days old ("Photo taken on 3 Jul 2017"). This catches some recycled photos,
 not every old photo. Weights live in `src/lib/triage.ts` and are covered by `tests/triage.test.ts`.
 
+## Languages
+
+The public site is in **12 languages**: English, हिन्दी, বাংলা, অসমীয়া, ଓଡ଼ିଆ, मराठी, ગુજરાતી, ਪੰਜਾਬੀ, தமிழ், తెలుగు,
+ಕನ್ನಡ and മലയാളം. The language comes from the menu in the top bar (remembered in a cookie), else the phone's
+language, else English. Header, menu, footer, home page, reporting and photo checking are fully translated; the
+control room and the long policy pages stay in English and Hindi and say so. Each language is one file in
+`src/locales/` with the same keys as `en.ts`, and `tests/i18n.test.ts` fails if a string or a `{placeholder}`
+is missing. Scripts beyond Latin and Devanagari use the phone's own fonts, so nothing extra downloads on 2G.
+The translations were drafted with AI and need a native speaker's review before real use.
+
 ## Fact checks and Instagram
 
 During a disaster, old photos and fake reels spread faster than help. Raahat turns its control room's decisions

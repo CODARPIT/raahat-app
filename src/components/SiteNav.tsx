@@ -2,20 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useI18n, type ClientDict } from "@/components/LocaleProvider";
 
-const LINKS = [
-  { href: "/", label: "Home" },
-  { href: "/report", label: "Report an incident" },
-  { href: "/map", label: "Live situation map" },
-  { href: "/check", label: "Fact check" },
-  { href: "/respond", label: "Control room" },
-  { href: "/safety", label: "Safety advisories" },
-  { href: "/help", label: "Help & FAQs" },
+const LINKS: { href: string; key: keyof ClientDict["nav"] }[] = [
+  { href: "/", key: "home" },
+  { href: "/report", key: "report" },
+  { href: "/map", key: "map" },
+  { href: "/check", key: "check" },
+  { href: "/respond", key: "control" },
+  { href: "/safety", key: "safety" },
+  { href: "/help", key: "help" },
 ];
 
 /** Main navigation bar; the current page is marked for screen readers and styled. */
 export function SiteNav() {
   const path = usePathname();
+  const { t } = useI18n();
   return (
     <nav className="main-nav" aria-label="Main">
       <ul>
@@ -27,7 +29,7 @@ export function SiteNav() {
                   <path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />
                 </svg>
               )}
-              {l.label}
+              {t.nav[l.key]}
             </Link>
           </li>
         ))}

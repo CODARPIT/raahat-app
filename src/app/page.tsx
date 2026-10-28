@@ -1,15 +1,18 @@
 import Link from "next/link";
+import { fmt, LOCALES } from "@/lib/i18n";
+import { getI18n } from "@/lib/locale";
 import { listReports } from "@/lib/reports";
 import { telegram } from "@/lib/telegram";
 import type { Severity } from "@/lib/types";
+import { DICTS } from "@/locales";
 
 export const revalidate = 30;
 
-const BANDS: { sev: Severity; label: string; labelHi: string; color: string }[] = [
-  { sev: "critical", label: "Critical: life at risk", labelHi: "अति गंभीर", color: "var(--sev-critical)" },
-  { sev: "high", label: "High: urgent help needed", labelHi: "गंभीर", color: "var(--sev-high)" },
-  { sev: "moderate", label: "Moderate: damage, no one in danger", labelHi: "मध्यम", color: "var(--sev-moderate)" },
-  { sev: "low", label: "Low: monitor", labelHi: "कम", color: "var(--sev-low)" },
+const BANDS: { sev: Severity; key: "bandCritical" | "bandHigh" | "bandModerate" | "bandLow"; color: string }[] = [
+  { sev: "critical", key: "bandCritical", color: "var(--sev-critical)" },
+  { sev: "high", key: "bandHigh", color: "var(--sev-high)" },
+  { sev: "moderate", key: "bandModerate", color: "var(--sev-moderate)" },
+  { sev: "low", key: "bandLow", color: "var(--sev-low)" },
 ];
 
 // Simple line icons, drawn inline so the page needs no icon font or image requests on 2G.
@@ -38,6 +41,10 @@ function Icon({ d }: { d: string }) {
 }
 
 export default async function Home() {
+  const { locale, t: { home: t } } = await getI18n();
+  // English readers also see the Hindi heading, as on bilingual government portals.
+  const hi = locale === "en" ? DICTS.hi.home : null;
+  const Alt = ({ text }: { text: string }) => (hi ? <span lang="hi"> · {text}</span> : null);
   // Shown once the bot is set up (TELEGRAM_BOT_USERNAME, see README).
   const bot = telegram.username ? `https://t.me/${telegram.username}` : null;
   const instagram = (process.env.INSTAGRAM_HANDLE ?? "").replace(/^@/, "");
@@ -54,12 +61,12 @@ export default async function Home() {
   const updated = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" });
 
   const services = [
-    { icon: ICON.camera, title: "Report an incident", titleHi: "घटना की रिपोर्ट करें", text: "Send one photo with your location, in Hindi or English. Works on a weak signal, and saves on your phone if the network drops.", href: "/report", cta: "Start a report" },
-    { icon: ICON.chat, title: "Report on Telegram", titleHi: "टेलीग्राम पर रिपोर्ट", text: "Send a photo to the Raahat bot and tap one button to share your location. It replies with the priority and a link to track it.", href: bot ? "#telegram" : "/report", cta: bot ? "Open the bot" : "Coming soon: use the web form" },
-    { icon: ICON.check, title: "Check a viral photo", titleHi: "वायरल फ़ोटो की जाँच", text: "Saw a disaster photo or reel on social media? Find out if the control room verified it, or if it's an old photo.", href: "/check", cta: "Check a photo" },
-    { icon: ICON.map, title: "Live situation map", titleHi: "लाइव स्थिति मानचित्र", text: "A public map for volunteers, media and families. Faces pixelated, locations rounded, reporters' notes hidden.", href: "/map", cta: "Open the map" },
-    { icon: ICON.book, title: "Safety advisories", titleHi: "सुरक्षा सलाह", text: "What to do before, during and after floods, earthquakes, cyclones and fires, adapted from NDMA guidance.", href: "/safety", cta: "Read the advisories" },
-    { icon: ICON.shield, title: "Control room", titleHi: "नियंत्रण कक्ष", text: "For district control rooms and NGOs: a ranked queue, map, \"why this score\", fact-check cards and a 2G mode.", href: "/respond", cta: "Responder sign-in" },
+    { icon: ICON.camera, title: t.sReportT, alt: hi?.sReportT, text: t.sReport, href: "/report", cta: t.sReportC },
+    { icon: ICON.chat, title: t.sTelegramT, alt: hi?.sTelegramT, text: t.sTelegram, href: bot ? "#telegram" : "/report", cta: bot ? t.sTelegramC : t.sTelegramSoon },
+    { icon: ICON.check, title: t.sCheckT, alt: hi?.sCheckT, text: t.sCheck, href: "/check", cta: t.sCheckC },
+    { icon: ICON.map, title: t.sMapT, alt: hi?.sMapT, text: t.sMap, href: "/map", cta: t.sMapC },
+    { icon: ICON.book, title: t.sSafetyT, alt: hi?.sSafetyT, text: t.sSafety, href: "/safety", cta: t.sSafetyC },
+    { icon: ICON.shield, title: t.sControlT, alt: hi?.sControlT, text: t.sControl, href: "/respond", cta: t.sControlC },
   ];
 
   return (
@@ -68,23 +75,20 @@ export default async function Home() {
       <section className="banner">
         <div className="banner-inner">
           <div className="banner-copy">
-            <p className="eyebrow">Citizen disaster reporting · <span lang="hi">नागरिक आपदा रिपोर्टिंग</span></p>
-            <h1>When the water rises, every photo is a call for help.</h1>
-            <p className="banner-hi" lang="hi">जब पानी बढ़ता है, हर फ़ोटो मदद की पुकार है।</p>
-            <p className="lead">
-              Raahat reads each citizen photo with Cloudinary AI, merges forwarded duplicates, blurs every face and gives
-              control rooms a ranked queue on a live map that loads even on 2G.
-            </p>
+            <p className="eyebrow">{t.eyebrow}<Alt text={hi?.eyebrow ?? ""} /></p>
+            <h1>{t.title}</h1>
+            {hi && <p className="banner-hi" lang="hi">{hi.title}</p>}
+            <p className="lead">{t.lead}</p>
             <div className="actions">
-              <Link className="btn btn-primary btn-lg" href="/report">Report an incident</Link>
-              <Link className="btn btn-lg btn-on-dark" href="/map">View live situation</Link>
+              <Link className="btn btn-primary btn-lg" href="/report">{t.ctaReport}</Link>
+              <Link className="btn btn-lg btn-on-dark" href="/map">{t.ctaMap}</Link>
             </div>
           </div>
 
           <aside className="situation" aria-labelledby="sit-h">
             <div className="situation-head">
-              <h2 id="sit-h">Live situation</h2>
-              <span className={`live-dot${live ? "" : " off"}`}>{live ? `Updated ${updated} IST` : "Live data unavailable"}</span>
+              <h2 id="sit-h">{t.live}</h2>
+              <span className={`live-dot${live ? "" : " off"}`}>{live ? fmt(t.updated, { time: updated }) : t.liveOff}</span>
             </div>
             <div className="staff">
               <div className="staff-pole" aria-hidden>
@@ -96,14 +100,13 @@ export default async function Home() {
                 {BANDS.map((b) => (
                   <div key={b.sev}>
                     <strong className="num" style={{ color: b.color }}>{counts[b.sev]}</strong>
-                    <span>{b.label} <span lang="hi" className="hi-inline">· {b.labelHi}</span></span>
+                    <span>{t[b.key]}</span>
                   </div>
                 ))}
               </div>
             </div>
             <p className="situation-foot">
-              <strong className="num">{total}</strong> open {total === 1 ? "report" : "reports"}, read off the flood-gauge staff
-              painted on river bridges. <Link href="/map">Open the map →</Link>
+              <strong className="num">{total}</strong> {t.openReports} <Link href="/map">{t.openMap} →</Link>
             </p>
           </aside>
         </div>
@@ -112,10 +115,10 @@ export default async function Home() {
       {/* ── Notice ─────────────────────────────────────────── */}
       <div className="notice" role="note">
         <div className="notice-inner">
-          <span className="notice-tag">Important</span>
+          <span className="notice-tag">{t.noticeTag}</span>
           <p>
-            In an emergency, <strong>call 112 first</strong>. Raahat helps control rooms decide who to reach first; it does not
-            replace emergency services. <span lang="hi">आपात स्थिति में पहले 112 पर कॉल करें।</span>
+            {t.notice}
+            {hi && <> <span lang="hi">{hi.notice.split("।")[0]}।</span></>}
           </p>
         </div>
       </div>
@@ -123,14 +126,14 @@ export default async function Home() {
       {/* ── Services ───────────────────────────────────────── */}
       <section className="section" aria-labelledby="svc-h">
         <div className="section-inner">
-          <h2 id="svc-h" className="section-title">Services <span lang="hi">· सेवाएँ</span></h2>
+          <h2 id="svc-h" className="section-title">{t.services}<Alt text={hi?.services ?? ""} /></h2>
           <ul className="services">
             {services.map((s) => (
-              <li key={s.title}>
+              <li key={s.href + s.title}>
                 <Link href={s.href} className="service">
                   <span className="service-icon"><Icon d={s.icon} /></span>
                   <span className="service-title">{s.title}</span>
-                  <span className="service-hi" lang="hi">{s.titleHi}</span>
+                  {s.alt && <span className="service-hi" lang="hi">{s.alt}</span>}
                   <span className="service-text">{s.text}</span>
                   <span className="service-cta">{s.cta} <span aria-hidden>→</span></span>
                 </Link>
@@ -143,37 +146,37 @@ export default async function Home() {
       {/* ── Impact numbers ─────────────────────────────────── */}
       <section className="stats" aria-label="Raahat at a glance">
         <div className="section-inner stats-grid">
-          <div><strong className="num">14</strong><span>hazard types recognised, from floods to gas leaks</span></div>
-          <div><strong className="num">&lt; 1 min</strong><span>from photo to a ranked report on the map</span></div>
-          <div><strong className="num">98%</strong><span>less data for queue images, so it works on 2G</span></div>
-          <div><strong className="num">2</strong><span>languages, Hindi and English, on the web and Telegram</span></div>
+          <div><strong className="num">14</strong><span>{t.stat1}</span></div>
+          <div><strong className="num">&lt; 1 min</strong><span>{t.stat2}</span></div>
+          <div><strong className="num">98%</strong><span>{t.stat3}</span></div>
+          <div><strong className="num">{LOCALES.length}</strong><span>{t.stat4}</span></div>
         </div>
       </section>
 
       {/* ── How it works ───────────────────────────────────── */}
       <section className="section" id="how" aria-labelledby="how-h">
         <div className="section-inner">
-          <h2 id="how-h" className="section-title">How Raahat works <span lang="hi">· यह कैसे काम करता है</span></h2>
+          <h2 id="how-h" className="section-title">{t.how}<Alt text={hi?.how ?? ""} /></h2>
           <ol className="steps">
             <li>
               <span className="step-icon"><Icon d={ICON.send} /></span>
-              <h3>A citizen sends a photo</h3>
-              <p>From the web page or Telegram, in Hindi or English. The photo is shrunk on the phone so it gets through on a weak signal.</p>
+              <h3>{t.how1T}</h3>
+              <p>{t.how1}</p>
             </li>
             <li>
               <span className="step-icon"><Icon d={ICON.ai} /></span>
-              <h3>Cloudinary AI reads it</h3>
-              <p>AI Vision names the hazard, counts people, judges water depth and flags screenshots or recycled photos.</p>
+              <h3>{t.how2T}</h3>
+              <p>{t.how2}</p>
             </li>
             <li>
               <span className="step-icon"><Icon d={ICON.merge} /></span>
-              <h3>Duplicates merge, faces blur</h3>
-              <p>A perceptual hash catches the same photo forwarded fifty times. Independent photos of one incident raise its priority.</p>
+              <h3>{t.how3T}</h3>
+              <p>{t.how3}</p>
             </li>
             <li>
               <span className="step-icon"><Icon d={ICON.pin} /></span>
-              <h3>Responders act</h3>
-              <p>A ranked queue with every point of the score explained, a map, few-KB thumbnails and one-tap fact-check cards for social media.</p>
+              <h3>{t.how4T}</h3>
+              <p>{t.how4}</p>
             </li>
           </ol>
         </div>
@@ -183,19 +186,15 @@ export default async function Home() {
       <section className="section section-alt" id="fact-check" aria-labelledby="fc-h">
         <div className="section-inner two-col">
           <div>
-            <h2 id="fc-h" className="section-title">Is that reel real? <span lang="hi">· क्या यह सच है?</span></h2>
-            <p className="section-lead">
-              During a disaster, old photos and fake videos spread faster than help. When the control room confirms a report,
-              Raahat makes a fact-check card for social media. Every card links back to a page on this site, so anyone can
-              confirm it in one tap.
-            </p>
+            <h2 id="fc-h" className="section-title">{t.fcTitle}<Alt text={hi?.fcTitle ?? ""} /></h2>
+            <p className="section-lead">{t.fcLead}</p>
             <ul className="checks">
-              <li><Icon d={ICON.check} /><span><strong>Verified by a person:</strong> the green Raahat band appears only after a control-room responder confirms the report.</span></li>
-              <li><Icon d={ICON.cross} /><span><strong>False photos called out:</strong> recycled or fake photos get a red &ldquo;do not share&rdquo; card.</span></li>
-              <li><Icon d={ICON.shield} /><span><strong>Hard to fake:</strong> if a card&rsquo;s link doesn&rsquo;t open a matching page here, the card is fake.</span></li>
+              <li><Icon d={ICON.check} /><span><strong>{t.fc1T}</strong> {t.fc1}</span></li>
+              <li><Icon d={ICON.cross} /><span><strong>{t.fc2T}</strong> {t.fc2}</span></li>
+              <li><Icon d={ICON.shield} /><span><strong>{t.fc3T}</strong> {t.fc3}</span></li>
             </ul>
             <div className="actions">
-              <Link className="btn btn-primary btn-lg" href="/check">Check a viral photo</Link>
+              <Link className="btn btn-primary btn-lg" href="/check">{t.fcCheck}</Link>
               {instagram && (
                 <a className="btn btn-lg" href={`https://www.instagram.com/${instagram}/`} target="_blank" rel="noreferrer" aria-label={`Follow @${instagram} on Instagram`}>@{instagram} on Instagram</a>
               )}
@@ -210,7 +209,7 @@ export default async function Home() {
                 <span className="card-link">Check it at raahat-kappa.vercel.app/v/…</span>
               </span>
             </div>
-            <figcaption>What a Raahat card looks like on Instagram. The link at the bottom is the proof.</figcaption>
+            <figcaption>{t.fcCaption}</figcaption>
           </figure>
         </div>
       </section>
@@ -219,28 +218,28 @@ export default async function Home() {
       {bot && (
         <section className="section" id="telegram" aria-labelledby="tg-h">
           <div className="section-inner">
-            <h2 id="tg-h" className="section-title">Report on Telegram <span lang="hi">· टेलीग्राम पर रिपोर्ट</span></h2>
-            <p className="section-lead">Free, works on a weak signal, and nothing to install beyond Telegram.</p>
+            <h2 id="tg-h" className="section-title">{t.tgTitle}<Alt text={hi?.tgTitle ?? ""} /></h2>
+            <p className="section-lead">{t.tgLead}</p>
             <ol className="steps steps-numbered">
               <li>
-                <h3>Open the bot</h3>
-                <p><a href={bot}>t.me/{telegram.username}</a>, then tap <strong>Start</strong>.</p>
+                <h3>{t.tg1T}</h3>
+                <p><a href={bot}>t.me/{telegram.username}</a>, {t.tg1}</p>
               </li>
               <li>
-                <h3>Send a photo</h3>
-                <p>Add a caption if you can: what is happening, how many people. Hindi or English.</p>
+                <h3>{t.tg2T}</h3>
+                <p>{t.tg2}</p>
               </li>
               <li>
-                <h3>Tap &ldquo;Send my location&rdquo;</h3>
-                <p>One button. No location? Your report still reaches the control room, who will place it.</p>
+                <h3>{t.tg3T}</h3>
+                <p>{t.tg3}</p>
               </li>
               <li>
-                <h3>Get a reply and a link</h3>
-                <p>Raahat answers with the priority and a link to follow your report. If life is in danger, also call 112.</p>
+                <h3>{t.tg4T}</h3>
+                <p>{t.tg4}</p>
               </li>
             </ol>
-            <p className="hint">Forward a viral photo to the bot and it fact-checks it instead of filing a report.</p>
-            <a className="btn btn-primary btn-lg" href={bot}>Open @{telegram.username}</a>
+            <p className="hint">{t.tgForward}</p>
+            <a className="btn btn-primary btn-lg" href={bot}>{t.tgOpen} @{telegram.username}</a>
           </div>
         </section>
       )}
@@ -249,17 +248,14 @@ export default async function Home() {
       <section className="section" id="privacy" aria-labelledby="priv-h">
         <div className="section-inner two-col">
           <div>
-            <h2 id="priv-h" className="section-title">Privacy and safety by default</h2>
-            <p className="section-lead">
-              Disaster photos show people at their most vulnerable. Raahat protects them on every public pixel, and keeps a
-              human in charge of every decision.
-            </p>
+            <h2 id="priv-h" className="section-title">{t.privTitle}</h2>
+            <p className="section-lead">{t.privLead}</p>
           </div>
           <ul className="checks">
-            <li><Icon d={ICON.blur} /><span><strong>Faces pixelated</strong> on every public image, automatically.</span></li>
-            <li><Icon d={ICON.pin} /><span><strong>Locations rounded</strong> to about 110 m on the public map.</span></li>
-            <li><Icon d={ICON.shield} /><span><strong>Nothing is deleted by AI.</strong> Doubtful reports go to a person for review.</span></li>
-            <li><Icon d={ICON.signal} /><span><strong>Works when networks fail:</strong> 2G mode, offline saving, Telegram intake.</span></li>
+            <li><Icon d={ICON.blur} /><span><strong>{t.priv1T}</strong> {t.priv1}</span></li>
+            <li><Icon d={ICON.pin} /><span><strong>{t.priv2T}</strong> {t.priv2}</span></li>
+            <li><Icon d={ICON.shield} /><span><strong>{t.priv3T}</strong> {t.priv3}</span></li>
+            <li><Icon d={ICON.signal} /><span><strong>{t.priv4T}</strong> {t.priv4}</span></li>
           </ul>
         </div>
       </section>
@@ -267,20 +263,20 @@ export default async function Home() {
       {/* ── Safety advisories ──────────────────────────────── */}
       <section className="section" aria-labelledby="adv-h">
         <div className="section-inner">
-          <h2 id="adv-h" className="section-title">Safety advisories <span lang="hi">· सुरक्षा सलाह</span></h2>
-          <p className="section-lead">What to do before, during and after a disaster, in plain words.</p>
+          <h2 id="adv-h" className="section-title">{t.advTitle}<Alt text={hi?.advTitle ?? ""} /></h2>
+          <p className="section-lead">{t.advLead}</p>
           <ul className="advisories">
             {[
-              { id: "flood", t: "Floods", hi: "बाढ़", tip: "Move to higher ground. Never walk or drive through moving water." },
-              { id: "earthquake", t: "Earthquakes", hi: "भूकंप", tip: "Drop, cover and hold on. Don't use lifts." },
-              { id: "cyclone", t: "Cyclones", hi: "चक्रवात", tip: "Stay indoors. A sudden calm may be the eye of the storm." },
-              { id: "fire", t: "Fire", hi: "आग", tip: "Stay low under smoke. Call 101 or 112." },
+              { id: "flood", title: t.advFlood, alt: hi?.advFlood, tip: t.advFloodTip },
+              { id: "earthquake", title: t.advQuake, alt: hi?.advQuake, tip: t.advQuakeTip },
+              { id: "cyclone", title: t.advCyclone, alt: hi?.advCyclone, tip: t.advCycloneTip },
+              { id: "fire", title: t.advFire, alt: hi?.advFire, tip: t.advFireTip },
             ].map((a) => (
               <li key={a.id}>
                 <Link href={`/safety#${a.id}`} className="advisory">
-                  <span className="advisory-title">{a.t} <span lang="hi">· {a.hi}</span></span>
+                  <span className="advisory-title">{a.title}{a.alt && <span lang="hi"> · {a.alt}</span>}</span>
                   <span className="advisory-tip">{a.tip}</span>
-                  <span className="service-cta">Read the advisory <span aria-hidden>→</span></span>
+                  <span className="service-cta">{t.advRead} <span aria-hidden>→</span></span>
                 </Link>
               </li>
             ))}
@@ -291,36 +287,36 @@ export default async function Home() {
       {/* ── Related official links ─────────────────────────── */}
       <section className="related" aria-labelledby="rel-h">
         <div className="section-inner">
-          <h2 id="rel-h">Related official links</h2>
-          <ul>
+          <h2 id="rel-h">{t.relTitle}</h2>
+          <ul lang="en">
             <li><a href="https://ndma.gov.in" target="_blank" rel="noreferrer">National Disaster Management Authority<span>ndma.gov.in</span></a></li>
             <li><a href="https://mausam.imd.gov.in" target="_blank" rel="noreferrer">India Meteorological Department<span>mausam.imd.gov.in</span></a></li>
             <li><a href="https://sachet.ndma.gov.in" target="_blank" rel="noreferrer">Sachet: official disaster alerts<span>sachet.ndma.gov.in</span></a></li>
             <li><a href="https://ndrf.gov.in" target="_blank" rel="noreferrer">National Disaster Response Force<span>ndrf.gov.in</span></a></li>
           </ul>
-          <p className="hint">External websites open in a new tab. Raahat is not affiliated with these organisations.</p>
+          <p className="hint">{t.relNote}</p>
         </div>
       </section>
 
       {/* ── Who it's for ───────────────────────────────────── */}
       <section className="section section-alt" aria-labelledby="who-h">
         <div className="section-inner">
-          <h2 id="who-h" className="section-title">Who uses Raahat</h2>
+          <h2 id="who-h" className="section-title">{t.whoTitle}</h2>
           <div className="audience">
             <div>
-              <h3>Citizens</h3>
-              <p>Report what you see in one minute, without an app or a login.</p>
-              <Link href="/report">Report an incident →</Link>
+              <h3>{t.who1T}</h3>
+              <p>{t.who1}</p>
+              <Link href="/report">{t.who1L} →</Link>
             </div>
             <div>
-              <h3>District control rooms and NGOs</h3>
-              <p>See the most urgent calls first, with duplicates merged and every score explained.</p>
-              <Link href="/respond">Open the control room →</Link>
+              <h3>{t.who2T}</h3>
+              <p>{t.who2}</p>
+              <Link href="/respond">{t.who2L} →</Link>
             </div>
             <div>
-              <h3>Volunteers, media and families</h3>
-              <p>Follow the situation on a privacy-safe public map.</p>
-              <Link href="/map">View the live map →</Link>
+              <h3>{t.who3T}</h3>
+              <p>{t.who3}</p>
+              <Link href="/map">{t.who3L} →</Link>
             </div>
           </div>
         </div>
