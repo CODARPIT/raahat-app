@@ -6,7 +6,10 @@ import { AccessBar } from "@/components/AccessBar";
 import { Seal } from "@/components/Seal";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteNav } from "@/components/SiteNav";
+import { LocaleProvider } from "@/components/LocaleProvider";
 import { A11Y_KEY, SITE_URL, THEME_KEY } from "@/lib/constants";
+import { getI18n } from "@/lib/locale";
+import { DICTS } from "@/locales";
 import "./globals.css";
 
 // Mukta (Ek Type, Mumbai) carries Latin and Devanagari in one family,
@@ -34,27 +37,31 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, them
 // Apply saved display settings (theme, text size, contrast) before first paint.
 const PREFS_SCRIPT = `try{var d=document.documentElement,t=localStorage.getItem("${THEME_KEY}");if(t==="light"||t==="dark")d.dataset.theme=t;var a=JSON.parse(localStorage.getItem("${A11Y_KEY}")||"{}");if(a.text==="sm"||a.text==="lg")d.dataset.text=a.text;if(a.contrast)d.dataset.contrast="high"}catch(e){}`;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const { locale, t } = await getI18n();
+  // The second line under the name: Hindi for English readers, English for everyone else.
+  const portalAlt = locale === "en" ? DICTS.hi.header.portal : locale === "hi" ? null : DICTS.en.header.portal;
   return (
-    <html lang="en" className={mukta.variable} suppressHydrationWarning>
+    <html lang={locale} className={mukta.variable} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: PREFS_SCRIPT }} />
       </head>
       <body>
+        <LocaleProvider locale={locale} t={{ access: t.access, nav: t.nav, report: t.report, check: t.check, severity: t.severity }}>
         <AccessBar />
         <div className="tricolour" aria-hidden />
         <header className="site-header">
-          <Link href="/" className="wordmark" aria-label="Raahat, citizen disaster reporting and triage portal: home">
+          <Link href="/" className="wordmark" aria-label={`Raahat, ${t.header.portal}: ${t.nav.home}`}>
             <Seal size={72} title="" id="seal-header" />
             <span className="wordmark-text">
               <span className="wordmark-hi" lang="hi">राहत</span>
               <span className="wordmark-name">RAAHAT</span>
-              <span className="wordmark-sub">Citizen Disaster Reporting &amp; Triage Portal</span>
-              <span className="wordmark-sub-hi" lang="hi">नागरिक आपदा रिपोर्टिंग एवं प्राथमिकता पोर्टल</span>
+              <span className="wordmark-sub">{t.header.portal}</span>
+              {portalAlt && <span className="wordmark-sub-hi" lang={locale === "en" ? "hi" : "en"}>{portalAlt}</span>}
             </span>
           </Link>
           <a href="tel:112" className="header-sos">
-            <span className="header-sos-label">In danger? Call</span>
+            <span className="header-sos-label">{t.header.inDanger}</span>
             <span className="header-sos-num num">112</span>
           </a>
         </header>
@@ -62,7 +69,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <div id="main" tabIndex={-1} className="page">
           {children}
         </div>
-        <SiteFooter />
+        <SiteFooter t={t} />
+        </LocaleProvider>
         <Analytics />
       </body>
     </html>
