@@ -90,6 +90,8 @@ Pages and endpoints: `/` overview · `/report` citizen reporting (Hindi/English)
 
 ## Reports without a location
 
+The reporting screen supports a short **photo → send** flow, optional hazard buttons and details, background GPS and a persistent Call 112 action on phones. Missing location never blocks sending; offline reports are clearly saved locally until sent. See [emergency-reporting.md](docs/emergency-reporting.md).
+
 WhatsApp strips GPS from forwarded photos, and people in a flood often can't find themselves on a map.
 Such reports are **never dropped**: Raahat uses EXIF GPS if the photo still has it, asks Telegram reporters for a
 location (one button), and collects place hints from the note ("near Gandhi School", "मंदिर के पास"), the reporter's

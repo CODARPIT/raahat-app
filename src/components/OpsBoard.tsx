@@ -148,7 +148,8 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
       open
         .filter((r) => SEV_RANK[r.severity] >= SEV_RANK[minSev])
         .filter((r) => !needsLocation || !isLocated(r))
-        .sort((a, b) => Number(a.needsReview) - Number(b.needsReview) || b.score - a.score || Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+        // Gemini uncertainty does not push a possibly urgent report below low-priority cases.
+        .sort((a, b) => Number(a.reviewReasons.length > 0) - Number(b.reviewReasons.length > 0) || b.score - a.score || Date.parse(b.createdAt) - Date.parse(a.createdAt)),
     [open, minSev, needsLocation],
   );
 

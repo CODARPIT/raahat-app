@@ -210,7 +210,7 @@ body { background: var(--paper); }
   .portal-information { grid-template-columns: 1fr; }
   .portal-information .portal-about .portal-panel-body { display: block; }
   .portal-process ol { grid-template-columns: repeat(2, 1fr); gap: 25px; }
-  .portal-section-heading { align-items: start; }
+  .portal-section-heading { align-items: flex-start; }
   .portal-section-heading > a { max-width: 130px; text-align: right; }
   .portal-privacy { grid-template-columns: 1fr; }
   .access-inner { justify-content: space-between; }
@@ -266,7 +266,7 @@ body { background: var(--paper); }
 .portal-map-caption p { margin: 4px 0 0; color: var(--ink-soft); line-height: 1.6; }
 @media (max-width: 760px) {
   .portal-map-stage { height: 350px; flex: none; }
-  .portal-map-heading { align-items: start; }
+  .portal-map-heading { align-items: flex-start; }
   .portal-map-heading a { max-width: 110px; text-align: right; }
 }
 
@@ -280,7 +280,7 @@ body { background: var(--paper); }
 .portal-quick-services { margin: 30px 0 34px; }
 .portal-quick-services ul { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); list-style: none; padding: 0; margin: 18px 0 0; gap: 14px; }
 .portal-quick-services li { min-width: 0; }
-.portal-quick-services li a { height: 100%; min-height: 166px; border: 1px solid var(--line); background: var(--paper); border-radius: 7px; display: flex; flex-direction: column; align-items: start; gap: 14px; padding: 20px; text-decoration: none; transition: border-color 150ms ease, box-shadow 150ms ease; }
+.portal-quick-services li a { height: 100%; min-height: 166px; border: 1px solid var(--line); background: var(--paper); border-radius: 7px; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; padding: 20px; text-decoration: none; transition: border-color 150ms ease, box-shadow 150ms ease; }
 .portal-quick-services li a:hover { border-color: var(--teal); box-shadow: 0 5px 14px rgb(15 40 65 / 0.08); }
 .quick-service-icon { width: 38px; height: 38px; background: var(--portal-soft); color: var(--teal); border-radius: 7px; display: grid; place-items: center; }
 .quick-service-title { font-size: 0.875rem; font-weight: 700; line-height: 1.5; }
@@ -323,3 +323,78 @@ body { background: var(--paper); }
 .incident-evidence button { text-align: left; padding: 9px 11px; width: 100%; background: var(--paper); border: 1px solid var(--line); border-radius: 3px; color: var(--ink); font-size: 0.8125rem; cursor: pointer; }
 .incident-evidence button[aria-pressed="true"] { border-color: var(--teal); font-weight: 700; }
 .incident-evidence .pill { margin-left: 6px; }
+/* Emergency reporting: large actions and short forms. */
+.btn.emergency-report-button { background: var(--sev-critical); border-color: var(--sev-critical); color: #fff; font-weight: 700; gap: 10px; white-space: normal; text-align: center; }
+.header-sos-label { overflow-wrap: anywhere; }
+.btn.emergency-report-button:hover { filter: brightness(0.92); }
+.btn.emergency-report-button:disabled { filter: none; opacity: 0.55; cursor: not-allowed; }
+.btn.emergency-call-button { color: var(--sev-critical); border: 1px solid currentColor; background: var(--paper); font-weight: 700; gap: 8px; white-space: normal; text-align: center; }
+.emergency-report-button svg, .emergency-call-button svg { flex-shrink: 0; }
+.portal-urgent { display: flex; align-items: center; justify-content: space-between; gap: 22px; margin: 0 0 24px; padding: 20px 24px; border: 1px solid var(--line); border-left: 5px solid var(--sev-critical); background: var(--paper); border-radius: 6px; }
+.portal-urgent h2 { margin: 0 0 3px; color: var(--ink); font-size: 1.375rem; line-height: 1.3; }
+.portal-urgent p { color: var(--ink-soft); margin: 0; font-size: 0.9375rem; }
+.portal-urgent-actions { display: flex; gap: 10px; flex-shrink: 0; }
+.portal-urgent-actions .btn { min-height: 58px; padding-inline: 20px; }
+.main-nav .portal-nav-report, .portal-mobile-control, .emergency-dock, .emergency-dock-space { display: none; }
+.report-page { max-width: 700px; padding-top: 20px; }
+.urgent-report-form { display: grid; gap: 18px; }
+.urgent-heading h1 { font-size: clamp(1.65rem, 4vw, 2.125rem); line-height: 1.2; }
+.urgent-heading p { margin: 0; color: var(--ink-soft); }
+.urgent-photo { padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+.urgent-photo h2 { display: flex; align-items: center; gap: 10px; font-size: 1.0625rem; margin: 0 0 16px; }
+.urgent-step { background: var(--chrome); color: #fff; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; font-size: 0.875rem; flex-shrink: 0; }
+.urgent-capture { grid-template-columns: 1.35fr 1fr; }
+.urgent-capture .btn { min-height: 72px; padding: 10px; font-size: 1rem; gap: 8px; white-space: normal; text-align: center; }
+.urgent-capture .btn-capture { font-size: 1.125rem; }
+.urgent-photo-preview { background: var(--mist); }
+.urgent-photo-preview img { height: 160px; aspect-ratio: auto; object-fit: contain; }
+.urgent-photo-status { position: absolute; bottom: 8px; left: 8px; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 4px; background: var(--paper); color: var(--ink); font-weight: 700; font-size: 0.8125rem; }
+.urgent-location { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; background: var(--portal-soft); border-radius: 7px; }
+.urgent-location > svg { flex-shrink: 0; color: var(--teal); margin-top: 3px; }
+.urgent-location strong { font-size: 0.9375rem; }
+.urgent-location p { margin: 3px 0 0; color: var(--ink-soft); font-size: 0.8125rem; }
+.urgent-hazards { border: 0; padding: 0; margin: 0; min-width: 0; }
+.urgent-hazards legend { font-weight: 700; font-size: 0.875rem; margin-bottom: 10px; }
+.urgent-hazards > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.urgent-hazards button { display: flex; align-items: center; gap: 10px; text-align: left; min-height: 52px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); cursor: pointer; line-height: 1.4; }
+.urgent-hazards button[aria-pressed="true"] { background: var(--portal-soft); border-color: var(--teal); box-shadow: inset 0 0 0 1px var(--teal); }
+.hazard-check { display: grid; place-items: center; flex-shrink: 0; width: 20px; height: 20px; border: 1px solid var(--ink-soft); border-radius: 4px; color: var(--teal); }
+.urgent-details { border: 1px solid var(--line); border-radius: 7px; }
+.urgent-details summary { cursor: pointer; padding: 15px 16px; font-size: 0.9375rem; font-weight: 700; }
+.urgent-details-body { padding: 4px 16px 0; }
+.urgent-details .loc-actions { justify-content: flex-start; }
+.urgent-details .loc-actions .btn { min-height: 48px; white-space: normal; }
+.urgent-picker { height: 260px; margin-top: 12px; border: 1px solid var(--line); overflow: hidden; border-radius: 5px; }
+.urgent-send-bar { position: sticky; bottom: 12px; z-index: 1100; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); box-shadow: 0 -4px 22px #102d4510; }
+.urgent-send-bar > p { margin: 0 0 8px; color: var(--ink-soft); font-size: 0.8125rem; }
+.urgent-send-bar > div { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; }
+.urgent-send-bar .btn { min-height: 58px; padding: 10px; line-height: 1.4; font-size: 1rem; }
+.urgent-send-space { display: none; }
+.urgent-contact { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); padding: 10px 14px; border-radius: 6px; margin: 0 0 20px; font-size: 0.875rem; }
+.urgent-contact a { color: var(--sev-critical); display: inline-flex; align-items: center; gap: 8px; font-weight: 700; padding: 4px 0; }
+:root[data-contrast="high"] .emergency-report-button { background: #000; color: #fff; border: 2px solid #fff; }
+
+@media (max-width: 760px) {
+  .main-nav .portal-nav-login { display: none; }
+  .main-nav .portal-nav-report { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-left: auto; padding: 12px 16px; background: var(--sev-critical); color: #fff; font-size: 0.875rem; font-weight: 700; white-space: normal; max-width: 72%; }
+  .portal-mobile-control { display: block; }
+  .portal-urgent { display: grid; gap: 14px; padding: 16px; margin-bottom: 18px; }
+  .portal-urgent h2 { font-size: 1.25rem; }
+  .portal-urgent-actions { display: grid; grid-template-columns: 1.65fr 1fr; gap: 8px; }
+  .portal-urgent-actions .btn { padding: 10px; font-size: 0.875rem; line-height: 1.4; }
+  .portal-urgent-actions .btn svg { width: 20px; }
+  .emergency-dock, .urgent-send-bar { position: fixed; inset: auto 0 0; z-index: 1100; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--paper); padding: 10px 14px max(10px, env(safe-area-inset-bottom)); box-shadow: 0 -4px 20px #102d4514; }
+  .emergency-dock { display: grid; grid-template-columns: 1.75fr 1fr; gap: 8px; }
+  .emergency-dock .btn { min-height: 58px; padding: 8px 12px; font-size: 0.9375rem; line-height: 1.35; }
+  .emergency-dock-space { display: block; height: calc(110px + env(safe-area-inset-bottom)); }
+  .report-page { padding-top: 16px; }
+  .report-page .crumbs { display: none; }
+  .urgent-report-form { gap: 14px; }
+  .urgent-heading p { font-size: 0.9375rem; }
+  .urgent-photo { padding: 14px; }
+  .urgent-location { padding: 12px; }
+  .urgent-hazards button { font-size: 0.9375rem; }
+  .urgent-send-space { display: block; height: calc(110px + env(safe-area-inset-bottom)); }
+  .urgent-send-bar > div { grid-template-columns: 1fr 1.9fr; }
+  .urgent-send-bar .btn { font-size: 1rem; }
+}

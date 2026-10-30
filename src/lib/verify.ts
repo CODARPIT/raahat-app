@@ -38,7 +38,7 @@ export function factCheck(r: Pick<Report, "status" | "history" | "reviewReasons"
   const checks: Check[] = [
     flag(has("Matches an older photo"), "Not a known old or recycled disaster photo", "Matches a known old disaster photo"),
     flag(has("Photo taken on"), "Photo date matches the report (when the camera recorded one)", "The camera recorded an older date than the report"),
-    flag(has(REASON_NOT_REAL), "Looks like a real camera photo, not a screenshot or edit", "Looks like a screenshot, edit or photo of a screen"),
+    flag(has(REASON_NOT_REAL), "Visual triage raised no screenshot or edit flag (not proof of authenticity)", "Looks like a screenshot, edit or photo of a screen"),
     flag(has(REASON_UNRELATED), "Shows an emergency or disaster scene", "Doesn't show an emergency or disaster scene"),
     // The model's explanation is never public; only that a check is open.
     ...(imageConcern(r) ? [{ label: "An automated image check raised questions; a responder is reviewing the photo", result: "open" as const }] : []),

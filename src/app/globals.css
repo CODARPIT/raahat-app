@@ -752,3 +752,7 @@ body > header, body > nav, body > footer, body > .page, body > .access-bar, body
   .verdict { gap: 12px; padding: 14px; }
   .verdict-icon { width: 40px; height: 40px; font-size: 1.25rem; }
 }
+.image-assessment { margin: 14px 0; padding: 14px 16px; border: 1px solid var(--line); border-left: 4px solid var(--teal); border-radius: var(--r-sm); background: var(--paper); }
+.image-assessment[data-state="review"] { border-left-color: #bd7808; }
+.image-assessment h3 { margin: 0 0 8px; font-size: 1rem; }
+.image-assessment p { margin: 6px 0; }

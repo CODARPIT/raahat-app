@@ -12,6 +12,7 @@ const SECURITY_HEADERS = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  devIndicators: false, // Keep the local preview's emergency actions unobstructed.
   poweredByHeader: false,
   async headers() {
     return [{ source: "/:path*", headers: SECURITY_HEADERS }];
