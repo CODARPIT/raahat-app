@@ -37,7 +37,7 @@ test("a less urgent report leaves the nearest centre's last unit for critical ca
   const out = assignAll([a, b]);
   assert.equal(centreOf(out, a.publicId), "ito"); // ITO had 2 ambulances to spare one
   assert.equal(centreOf(out, b.publicId), "kashmere"); // ITO's last one is kept
-  assert.match(out.assignments[1].reason, /ITO is nearer/);
+  assert.match(out.assignments[1].reason, /ITO is closer, but keeps its last ambulance free/);
 });
 
 test("low severity goes to a centre with plenty of units, further away", () => {
@@ -53,6 +53,7 @@ test("a new critical report takes over a unit from a less urgent one", () => {
   assert.equal(centreOf(out, c1.publicId), "ito");
   assert.equal(centreOf(out, c2.publicId), "ito");
   assert.equal(centreOf(out, moderate.publicId), "kashmere");
+  assert.match(out.assignments.find((a) => a.publicId === moderate.publicId)!.reason, /ITO is closer, but its ambulances are all out/);
 });
 
 test("unverified, closed, duplicate and out-of-range reports", () => {

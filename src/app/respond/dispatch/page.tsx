@@ -27,7 +27,8 @@ export default async function DispatchPage() {
       primaryCategory: r.primaryCategory,
       categories: r.categories,
       duplicateOf: r.duplicateOf,
-      title: CATEGORY_LABEL[r.primaryCategory] ?? r.primaryCategory,
+      title: r.summary || (CATEGORY_LABEL[r.primaryCategory] ?? r.primaryCategory),
+      kind: [CATEGORY_LABEL[r.primaryCategory] ?? r.primaryCategory, r.placeHint].filter(Boolean).join(" · "),
     }));
   } catch (err) {
     error = errorMessage(err);
@@ -43,15 +44,11 @@ export default async function DispatchPage() {
         </ol>
       </nav>
       <header className="dispatch-head">
-        <p className="sitrep-kicker">Raahat · Dispatch</p>
-        <h1>Help goes to the most urgent call first</h1>
-        <p className="hint">
-          Critical reports get the nearest free unit at once, even one already heading to a less urgent call. High, Moderate and
-          Low reports wait for the control room to verify them, then take a unit from a centre that can spare one, which is
-          often further away. Centres are demo stations, not real ones.
-        </p>
+        <p className="sitrep-kicker">Raahat · Dispatch board</p>
+        <h1>Who sends help, and why</h1>
+        <p className="hint">The most urgent reports get the closest units. Less urgent ones get help from a centre that can spare it, so nearby units stay free for emergencies.</p>
       </header>
-      {error && <p className="error" role="alert">Couldn&rsquo;t load reports: {error}. The drill still works.</p>}
+      {error && <p className="error" role="alert">Couldn&rsquo;t load reports: {error}. The step-by-step demo still works.</p>}
       <DispatchPanel live={live} />
     </main>
   );

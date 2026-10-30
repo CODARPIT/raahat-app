@@ -14,8 +14,11 @@ export type UnitType = "ambulance" | "fire" | "rescue";
 export const UNIT_LABEL: Record<UnitType, string> = {
   ambulance: "Ambulance",
   fire: "Fire tender",
-  rescue: "Rescue team / boat",
+  rescue: "Rescue team",
 };
+const ONE: Record<UnitType, string> = { ambulance: "ambulance", fire: "fire tender", rescue: "rescue team" };
+const MANY: Record<UnitType, string> = { ambulance: "ambulances", fire: "fire tenders", rescue: "rescue teams" };
+const A_ONE: Record<UnitType, string> = { ambulance: "an ambulance", fire: "a fire tender", rescue: "a rescue team" };
 
 export interface Centre {
   id: string;
@@ -90,6 +93,24 @@ function cleared(r: DispatchReport): boolean {
   return r.severity === "critical" || r.status === "verified" || r.status === "dispatched";
 }
 
+const place = (c: Centre) => c.name.replace(" (demo)", "");
+
+function whyNearest(severity: Severity, c: Centre, unit: UnitType): string {
+  return severity === "critical"
+    ? `Most urgent, so the closest free ${ONE[unit]} is sent at once.`
+    : `${place(c)} is the closest centre and has ${A_ONE[unit]} to spare.`;
+}
+
+/** Why the closer centres were passed over, in one sentence. */
+function whySkipped(closer: Centre[], unit: UnitType, free: Map<string, Record<UnitType, number>>): string {
+  if (closer.length > 1) return `Closer centres (${closer.map(place).join(", ")}) have no ${ONE[unit]} to spare.`;
+  const c = closer[0];
+  const left = free.get(c.id)![unit];
+  if (c.units[unit] === 0) return `${place(c)} is closer but has no ${MANY[unit]}.`;
+  if (left === 0) return `${place(c)} is closer, but its ${c.units[unit] === 1 ? ONE[unit] + " is" : MANY[unit] + " are all"} out on other calls.`;
+  return `${place(c)} is closer, but keeps its last ${left === 1 ? ONE[unit] : `${left} ${MANY[unit]}`} free for more urgent calls.`;
+}
+
 const km = (r: DispatchReport, c: Centre) => haversineMeters(r.lat!, r.lng!, c.lat, c.lng) / 1000;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
@@ -103,20 +124,21 @@ export function assignAll(reports: DispatchReport[], centres: Centre[] = DEMO_CE
     const unit = unitFor(r);
     const base = { publicId: r.publicId, severity: r.severity, unit, unverified: r.status === "new" };
     if (!cleared(r)) {
-      return { ...base, state: "waiting_verification", centreId: null, km: null, etaMin: null, reason: "Waiting for the control room to verify it." };
+      return { ...base, state: "waiting_verification", centreId: null, km: null, etaMin: null, reason: "Verify it in the control room and help is assigned automatically." };
     }
     const rule = RULES[r.severity];
     const byDistance = centres.map((c) => ({ c, d: km(r, c) })).sort((a, b) => a.d - b.d);
-    const nearest = byDistance[0];
-    const pick = byDistance.find(({ c, d }) => d <= rule.maxKm && free.get(c.id)![unit] > rule.keepFree);
-    if (!pick) {
-      return { ...base, state: "queued", centreId: null, km: null, etaMin: null, reason: `No ${UNIT_LABEL[unit].toLowerCase()} free within ${rule.maxKm === Infinity ? "range" : `${rule.maxKm} km`}. Queued for the next free unit.` };
+    const at = byDistance.findIndex(({ c, d }) => d <= rule.maxKm && free.get(c.id)![unit] > rule.keepFree);
+    if (at === -1) {
+      const reason =
+        r.severity === "critical"
+          ? `Every ${ONE[unit]} is already out on another Critical call. It goes to the first one that frees up.`
+          : `No centre within ${rule.maxKm} km can spare ${A_ONE[unit]} right now. It goes to the first one that frees up.`;
+      return { ...base, state: "queued", centreId: null, km: null, etaMin: null, reason };
     }
+    const pick = byDistance[at];
+    const reason = at === 0 ? whyNearest(r.severity, pick.c, unit) : whySkipped(byDistance.slice(0, at).map(({ c }) => c), unit, free);
     free.get(pick.c.id)![unit] -= 1;
-    let reason: string;
-    if (r.severity === "critical") reason = "Critical: nearest free unit.";
-    else if (pick.c.id === nearest.c.id) reason = "Nearest centre has units to spare.";
-    else reason = `${nearest.c.name.replace(" (demo)", "")} is nearer, but its last ${rule.keepFree > 1 ? `${rule.keepFree} units are` : "unit is"} kept for more urgent calls.`;
     return { ...base, state: "assigned", centreId: pick.c.id, km: round1(pick.d), etaMin: Math.max(2, Math.round((pick.d / CITY_KMH) * 60)), reason };
   });
 
