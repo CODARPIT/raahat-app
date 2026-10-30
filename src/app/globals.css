@@ -289,6 +289,9 @@ html[data-text="lg"] { font-size: 115%; }
 
 .review { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--sev-high); background: var(--mist); font-size: 0.9375rem; }
 .review ul { margin: 4px 0 0; padding-left: 20px; }
+.image-check { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--line, #c9d3dd); background: var(--mist); font-size: 0.9375rem; }
+.image-check ul { margin: 4px 0 0; padding-left: 20px; }
+.review .btn, .image-check .btn { margin-top: 8px; }
 
 .why { margin: 4px 0 8px; font-size: 0.9375rem; }
 .why summary { cursor: pointer; font-weight: 700; }
@@ -877,3 +880,7 @@ body > header, body > nav, body > footer, body > .page, body > .access-bar, body
   .live-pulse, .dmap-route.is-moving, .dmap-num::after, .dispatch-feed li, .dispatch-card { animation: none !important; }
   .dispatch-progress span, .dispatch-step-bar span { transition: none; }
 }
+.image-assessment { margin: 14px 0; padding: 14px 16px; border: 1px solid var(--line); border-left: 4px solid var(--teal); border-radius: var(--r-sm); background: var(--paper); }
+.image-assessment[data-state="review"] { border-left-color: #bd7808; }
+.image-assessment h3 { margin: 0 0 8px; font-size: 1rem; }
+.image-assessment p { margin: 6px 0; }

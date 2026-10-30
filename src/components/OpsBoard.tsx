@@ -15,6 +15,9 @@ import { HISTORY_LABEL } from "@/lib/history";
 import { CATEGORY_LABEL, CHANNEL_LABEL, DEPTH_LABEL, LOCATION_SOURCE_LABEL } from "@/lib/labels";
 import { isLocated, type Report, type Severity, type Status } from "@/lib/types";
 import { shortId } from "@/lib/verify";
+import type { Incident } from "@/lib/incidents";
+import { REPORT_REFRESH_MS } from "@/lib/constants";
+import { imageConcern, type ImageReviewState } from "@/lib/image-review";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
@@ -26,6 +29,15 @@ const NEXT_STATUS: { status: Status; label: string }[] = [
   { status: "rejected", label: "Reject as false" },
 ];
 const LOW_QUOTA = 50;
+
+/** The delayed AI-image check, kept apart from the hazard score. */
+const IMAGE_CHECK: Record<Exclude<ImageReviewState, "not_assessed">, string> = {
+  pending: "Pending. A second check starts about 10 seconds after filing. Until it finishes, this report's circle is provisional and it can't add corroboration.",
+  clear: "No clear signs of AI generation. This doesn't prove the photo is genuine or that the event happened.",
+  suspected: "Suspected synthetic. Score and status are unchanged, but the report stays out of incident circles and the public map until you accept the image evidence. It has not been rejected.",
+  inconclusive: "Inconclusive. The model couldn't tell; this is not evidence either way.",
+  unavailable: "Unavailable. No assessment was obtained (no key, an error, a timeout or an overdue job); this is not evidence either way.",
+};
 
 /** Single-key shortcuts for a coordinator working through a long queue. */
 const SHORTCUTS: { keys: string; action: string; responderOnly?: boolean }[] = [
@@ -73,6 +85,8 @@ const signed = (n: number) => (n >= 0 ? `+${n}` : `−${Math.abs(n)}`);
 
 export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
   const [reports, setReports] = useState<Report[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [groupIncidents, setGroupIncidents] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -93,11 +107,12 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/reports", { cache: "no-store" });
+      const res = await fetch("/api/reports", { cache: "no-store", credentials: mode === "public" ? "omit" : "same-origin" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Couldn't load reports.");
       const list = data.reports as Report[];
       setReports(list);
+      setIncidents((data.incidents as Incident[] | undefined) ?? []);
       if (seen.current === null) {
         seen.current = new Set(list.map((r) => r.publicId));
       } else {
@@ -110,15 +125,15 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
       setAi((data.ai as AiInfo | undefined) ?? null);
       setError(null);
     } catch (e) {
-      setError(`${(e as Error).message} Retrying every 20 seconds.`);
+      setError(`${(e as Error).message} Retrying every ${REPORT_REFRESH_MS / 1000} seconds.`);
     } finally {
       setLoaded(true);
     }
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 20000);
+    const id = setInterval(load, REPORT_REFRESH_MS);
     return () => clearInterval(id);
   }, [load]);
 
@@ -128,16 +143,32 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
   );
   const unlocatedCount = open.filter((r) => !isLocated(r)).length;
 
-  const queue = useMemo(
+  const filteredReports = useMemo(
     () =>
       open
         .filter((r) => SEV_RANK[r.severity] >= SEV_RANK[minSev])
         .filter((r) => !needsLocation || !isLocated(r))
-        .sort((a, b) => Number(a.needsReview) - Number(b.needsReview) || b.score - a.score || Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+        // Gemini uncertainty does not push a possibly urgent report below low-priority cases.
+        .sort((a, b) => Number(a.reviewReasons.length > 0) - Number(b.reviewReasons.length > 0) || b.score - a.score || Date.parse(b.createdAt) - Date.parse(a.createdAt)),
     [open, minSev, needsLocation],
   );
 
+  const incidentByReport = useMemo(() => new Map(incidents.flatMap((incident) => incident.reportIds.map((id) => [id, incident] as const))), [incidents]);
+  // Highest-priority original represents the group; all evidence remains accessible.
+  const queue = useMemo(() => {
+    if (!groupIncidents) return filteredReports;
+    const seen = new Set<string>();
+    return filteredReports.filter((report) => {
+      const id = incidentByReport.get(report.publicId)?.id ?? report.publicId;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [filteredReports, incidentByReport, groupIncidents]);
+
   const selected = reports.find((r) => r.publicId === selectedId) ?? null;
+  const selectedIncident = selected ? incidentByReport.get(selected.publicId) : undefined;
+  const incidentEvidence = selectedIncident ? reports.filter((report) => selectedIncident.reportIds.includes(report.publicId)) : [];
   const duplicates = selected ? reports.filter((r) => r.duplicateOf === selected.publicId) : [];
 
   // Centre of the located reports: Nominatim prefers place names near the incident area.
@@ -211,6 +242,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setReports((rs) => rs.map((r) => (r.publicId === selected.publicId ? (data.report as Report) : r)));
+      void load(); // Refresh circles/membership after a status or pin change.
       return true;
     } catch (e) {
       setError((e as Error).message);
@@ -224,7 +256,6 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
     if (await patch({ lat, lng })) {
       setPinning(false);
       setSuggestion(null);
-      load(); // nearby reports may have gained a corroboration
     }
   }
 
@@ -274,7 +305,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
           </p>
         )}
         <div className="ops-bar">
-          <strong className="num">{queue.length} open</strong>
+          <strong className="num">{groupIncidents ? `${queue.filter((r) => incidentByReport.has(r.publicId)).length} incidents · ` : ""}{filteredReports.length} reports</strong>
           {fresh.size > 0 && <span className="pill pill-new num" role="status">{fresh.size} new</span>}
           <span className="spacer" />
           <label>
@@ -293,6 +324,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
             </label>
           )}
           <label><input type="checkbox" checked={hideClosed} onChange={(e) => setHideClosed(e.target.checked)} /> Hide closed</label>
+          <label><input type="checkbox" checked={groupIncidents} onChange={(e) => setGroupIncidents(e.target.checked)} /> Group incidents</label>
           <label><input type="checkbox" checked={bw === "saver"} onChange={(e) => setBw(e.target.checked ? "saver" : "normal")} /> 2G mode</label>
           <button type="button" className="linklike kbd-hint" onClick={() => helpRef.current?.showModal()} aria-keyshortcuts="?">
             Shortcuts <kbd>?</kbd>
@@ -346,10 +378,13 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                     {!isLocated(r) && <span className="pill pill-warn">No location</span>}{" "}
                     {r.channel !== "web" && <span className="pill">{CHANNEL_LABEL[r.channel]}</span>}{" "}
                     {ago(r.createdAt)}
+                    {incidentByReport.has(r.publicId) && <span className="pill incident-pill">{incidentByReport.get(r.publicId)!.reportIds.length} in incident</span>}
                     {r.corroborations > 0 && `, ${r.corroborations + 1} reports`}
                     {r.status !== "new" && `, ${r.status}`}
                     {r.needsReview && ", needs review"}
                     {r.aiMode === "demo" && ", rule-based"}
+                    {mode === "responder" && r.imageReview?.state === "pending" && <> <span className="pill">Image check pending</span></>}
+                    {mode === "responder" && imageConcern(r) && <> <span className="pill pill-warn">Possible AI image</span></>}
                   </span>
                 </span>
               </button>
@@ -371,10 +406,11 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
             <span><i className="dot" data-sev="high" />High</span>
             <span><i className="dot" data-sev="moderate" />Moderate</span>
             <span><i className="dot" data-sev="low" />Low</span>
-            <span className="legend-note">Bigger circle = more independent reports</span>
+            <span className="legend-note">Dashed circles: severity-based grouping areas</span>
           </div>
           <MapView
-            reports={queue}
+            reports={filteredReports}
+            incidents={incidents}
             selectedId={selectedId}
             onSelect={(r) => setSelectedId(r.publicId)}
             onPick={pinning ? pinAt : undefined}
@@ -395,11 +431,40 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
               <h2>{CATEGORY_LABEL[selected.primaryCategory]}</h2>
               <p>{selected.summary}</p>
               <p className="hi" lang="hi">{selected.summaryHi}</p>
+              {selectedIncident && <section className="incident-evidence" aria-label="Incident evidence">
+                <h3>Same incident · {selectedIncident.radiusM} m grouping radius</h3>
+                <p>{incidentEvidence.length} original reports. A matching hazard and time are required; this circle is not the disaster's impact boundary. Public locations are approximate.</p>
+                <ul>{incidentEvidence.map((report) => <li key={report.publicId}><button type="button" aria-pressed={selectedId === report.publicId} onClick={() => setSelectedId(report.publicId)}>
+                  <span className="sev sev-text" data-sev={report.severity}>{report.severity}</span> {report.summary || CATEGORY_LABEL[report.primaryCategory]}
+                  {report.publicId === selectedIncident.anchorId && <span className="pill">Anchor report</span>}
+                </button></li>)}</ul>
+              </section>}
               {mode === "responder" && selected.note && <p><strong>Reporter wrote:</strong> {selected.note}</p>}
               {selected.reviewReasons.length > 0 && (
                 <div className="review" role="note">
                   <strong>Check before acting:</strong>
                   <ul>{selected.reviewReasons.map((r) => <li key={r}>{r}</li>)}</ul>
+                </div>
+              )}
+              {mode === "responder" && selected.imageReview && selected.imageReview.state !== "not_assessed" && (
+                <div className={imageConcern(selected) ? "review" : "image-check"} role="note">
+                  <strong>AI image check (separate from the score):</strong> {IMAGE_CHECK[selected.imageReview.state]}
+                  {selected.imageReview.concerns.length > 0 && (
+                    <ul>{selected.imageReview.concerns.map((c) => <li key={c}>{c}</li>)}</ul>
+                  )}
+                  {selected.imageReview.acceptedAt && (
+                    <p className="hint">
+                      A responder accepted this image as evidence on{" "}
+                      {new Date(selected.imageReview.acceptedAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.
+                      The model&apos;s concerns are kept for the record.
+                    </p>
+                  )}
+                  {selected.imageReview.model && <p className="hint">Checked with {selected.imageReview.model}. It cannot detect SynthID or C2PA, and can be wrong both ways.</p>}
+                  {imageConcern(selected) && (
+                    <button className="btn" disabled={busy} onClick={() => patch({ acceptImage: true })}>
+                      Accept image evidence after review
+                    </button>
+                  )}
                 </div>
               )}
               <dl>

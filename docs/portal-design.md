@@ -15,7 +15,7 @@ Live inspection of these destinations was denied by the environment's outbound p
 ## Behavior
 
 - The three banner tabs work with clicks and the Left/Right/Home/End keys. No auto-advancing animation.
-- The live-map tab opens automatically on the homepage, with a pan/zoom map centred on India. Public reports refresh every 20 seconds; requests omit authentication cookies so the API supplies public locations even for signed-in responders. Scroll-wheel zoom is disabled on the homepage to preserve normal page scrolling.
+- The live-map tab opens automatically on the homepage, with a pan/zoom map centred on India. Public reports and incident radii refresh every 5 seconds; requests omit authentication cookies so the API supplies public locations even for signed-in responders. Scroll-wheel zoom is disabled on the homepage to preserve normal page scrolling.
 - The mobile navigation expands using a labelled button and closes after choosing a link.
 - Language selection, text size, high contrast, theme settings, existing report uploads and responder routes retain their existing implementation.
 - Report counts use existing Cloudinary data. If fetching fails, the summary shows dashes and an unavailable message, rather than an invented zero.

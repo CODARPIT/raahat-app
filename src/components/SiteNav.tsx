@@ -39,7 +39,9 @@ export function SiteNav() {
             </Link>
           </li>
         ))}
+        <li className="portal-mobile-control"><Link href="/respond" onClick={() => setOpen(false)}>{t.nav.control} <ExternalArrow /></Link></li>
       </ul>
+      <Link href="/report" className="portal-nav-report" onClick={() => setOpen(false)} aria-current={path === "/report" ? "page" : undefined}>{t.nav.report} <span aria-hidden>→</span></Link>
       <Link href="/respond" className="portal-nav-login" onClick={() => setOpen(false)} aria-current={path?.startsWith("/respond") ? "page" : undefined}>{t.nav.control} <ExternalArrow /></Link>
       </div>
     </nav>

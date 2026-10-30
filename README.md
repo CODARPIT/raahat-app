@@ -90,6 +90,8 @@ Pages and endpoints: `/` overview · `/report` citizen reporting (Hindi/English)
 
 ## Reports without a location
 
+The reporting screen supports a short **photo → send** flow, optional hazard buttons and details, background GPS and a persistent Call 112 action on phones. Missing location never blocks sending; offline reports are clearly saved locally until sent. See [emergency-reporting.md](docs/emergency-reporting.md).
+
 WhatsApp strips GPS from forwarded photos, and people in a flood often can't find themselves on a map.
 Such reports are **never dropped**: Raahat uses EXIF GPS if the photo still has it, asks Telegram reporters for a
 location (one button), and collects place hints from the note ("near Gandhi School", "मंदिर के पास"), the reporter's
@@ -97,6 +99,14 @@ location (one button), and collects place hints from the note ("near Gandhi Scho
 lists them; a coordinator clicks **Pin location** and clicks the map. A Nominatim (OpenStreetMap) guess from the
 place hint is drawn as a dashed suggestion and is never confirmed automatically. Unlocated reports can still be
 merged as duplicates (by perceptual hash) but only corroborate other reports once they have a location.
+
+## Incident circles
+
+High/critical reports can anchor an incident grouping area. A compatible report can join only inside the current radius and within 12 hours. The circle grows with the strongest active evidence (about 200 m at score 45 to 800 m at score 100) and shrinks when the strongest evidence is resolved or excluded. It stays centred on the anchor, so nearby reports cannot extend it by forming a spatial chain. The radius is a matching heuristic, not the disaster's physical impact boundary.
+
+Maps and the grouped evidence queue refresh every 5 seconds; the existing Cloudinary Search cache may add delay. Each original report, image and status remains available. Duplicate photos do not increase priority, and a known photo reused outside the matching area/time goes to human review. Public locations and circle centres remain approximate.
+
+See [incident-grouping.md](docs/incident-grouping.md) for matching rules, limitations and tests.
 
 ## Scoring
 
@@ -112,6 +122,16 @@ Every point is shown in the control room under **"Why this score"**.
 Reasons for review: the AI flags screenshots, memes, drawings, photos of screens or unrelated images, and the
 photo's EXIF date is more than 7 days old ("Photo taken on 3 Jul 2017"). This catches some recycled photos,
 not every old photo. Weights live in `src/lib/triage.ts` and are covered by `tests/triage.test.ts`.
+
+## AI-image check (Gemini)
+
+About 10 seconds after a web, Telegram or WhatsApp photo is rated, Raahat asks Gemini whether the image shows
+concrete signs of AI generation. The result sits in its own panel in the control room and never changes the hazard
+score or status. A **suspected** image stays out of incident circles, corroboration and the public map until a
+responder clicks **Accept image evidence after review**; it is never auto-rejected or called fake. While the check is
+pending, the report's circle is provisional and it can't add corroboration. The reporter follows the result on their
+screen with a one-hour signed receipt. It does not detect SynthID or C2PA and can be wrong both ways. Set
+`GEMINI_API_KEY` (free in Google AI Studio); details, limits and states in [docs/image-review.md](docs/image-review.md).
 
 ## Languages
 

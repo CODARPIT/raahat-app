@@ -8,11 +8,12 @@
 // here; for a demo, warm the app and keep it on one instance (or run `npm start`).
 
 import { cloudinary } from "./cloudinary";
-import { analysisUrl, thumbUrl } from "./cld-url";
+import { analysisUrl, originalUrl, thumbUrl } from "./cld-url";
 import { exifDate, exifLocation, oldPhotoReason } from "./exif";
 import { addHistory, decodeHistory, encodeHistory, type HistoryAction } from "./history";
 import { errorMessage } from "./errors";
 import { mergeReports } from "./merge";
+import { buildIncidents } from "./incidents";
 import { placeHint } from "./place";
 import {
   aiReviewReasons,
@@ -22,11 +23,24 @@ import {
   phashDistance,
   REASON_NOT_REAL,
   REASON_UNRELATED,
+  REASON_REUSED_PHOTO,
   scoreReport,
   type Candidate,
   type KnownOldPhoto,
 } from "./triage";
 import { getFindings } from "./vision";
+import {
+  assessImage,
+  effectiveReview,
+  imageConcern,
+  initialReview,
+  NOT_ASSESSED,
+  reviewPending,
+  type Assessment,
+  type AssessOptions,
+  type ImageReview,
+  type ImageReviewState,
+} from "./image-review";
 import {
   CATEGORIES,
   type Category,
@@ -137,6 +151,26 @@ export function toReport(r: CldResource): Report | null {
     reporterHash: c.rh || null,
     // Reports filed before the audit trail existed start with their filing time.
     history: c.hist ? decodeHistory(c.hist) : [{ action: "filed", at: r.created_at }],
+    imageReview: reviewOf(c, located),
+  });
+}
+
+const REVIEW_STATES: ImageReviewState[] = ["pending", "clear", "suspected", "inconclusive", "unavailable", "not_assessed"];
+
+/** Reports filed before the image check existed read as "not assessed". */
+function reviewOf(c: Ctx, located: boolean): ImageReview {
+  if (!REVIEW_STATES.includes(c.ir as ImageReviewState)) {
+    // Older reports voted when filed if they had a location; otherwise their first pin votes.
+    return { ...NOT_ASSESSED, votesAdded: located };
+  }
+  return effectiveReview({
+    state: c.ir as ImageReviewState,
+    dueAt: c.ir_due || null,
+    at: c.ir_at || null,
+    model: c.ir_model || null,
+    concerns: c.ir_why ? c.ir_why.split(REASON_SEP).filter(Boolean) : [],
+    acceptedAt: c.ir_ok || null,
+    votesAdded: c.ir_votes === "1",
   });
 }
 
@@ -171,6 +205,13 @@ function toContext(r: Report): Ctx {
     phash: r.phash ?? "",
     rh: r.reporterHash ?? "",
     hist: encodeHistory(r.history),
+    ir: r.imageReview.state,
+    ir_due: r.imageReview.dueAt ?? "",
+    ir_at: r.imageReview.at ?? "",
+    ir_model: r.imageReview.model ?? "",
+    ir_why: r.imageReview.concerns.join(REASON_SEP).slice(0, 400),
+    ir_ok: r.imageReview.acceptedAt ?? "",
+    ir_votes: r.imageReview.votesAdded ? "1" : "0",
   };
 }
 
@@ -305,18 +346,30 @@ async function knownOldLibrary(): Promise<KnownOldPhoto[]> {
 
 /** Open primaries a new or re-located report may merge into. Closed reports are hidden, so never merge into them. */
 function candidatesFrom(reports: Report[], exceptId?: string): Candidate[] {
+  const incidents = buildIncidents(reports);
+  const byReport = new Map(incidents.flatMap((incident) => incident.reportIds.map((id) => [id, incident] as const)));
+  const byId = new Map(reports.map((report) => [report.publicId, report]));
   return reports
-    .filter((r) => r.publicId !== exceptId && r.status !== "rejected" && r.status !== "resolved")
-    .map((r) => ({
+    .filter((r) => r.publicId !== exceptId && !r.needsReview && !imageConcern(r) && r.status !== "rejected" && r.status !== "resolved")
+    .map((r) => {
+      const incident = byReport.get(r.publicId);
+      const anchor = (incident && byId.get(incident.anchorId)) || r;
+      return {
       publicId: r.publicId,
       lat: r.lat,
       lng: r.lng,
       phash: r.phash,
-      primaryCategory: r.primaryCategory,
-      categories: r.categories,
+      primaryCategory: anchor.primaryCategory,
+      categories: anchor.categories,
       createdAt: r.createdAt,
       duplicateOf: r.duplicateOf,
-    }));
+      score: r.score,
+      ...(incident ? {
+        incidentLat: incident.lat, incidentLng: incident.lng,
+        incidentRadiusM: incident.radiusM, incidentCreatedAt: incident.createdAt,
+      } : {}),
+    };
+    });
 }
 
 /** Add one corroboration to each target and re-score it. */
@@ -336,6 +389,8 @@ export interface TriageInput {
   lang: "en" | "hi";
   channel?: Channel;
   reporterHash?: string | null;
+  /** Schedule the delayed Gemini image check (web, Telegram, WhatsApp; not seed scripts). */
+  assessImage?: boolean;
 }
 
 /** The oldest report of a near-identical photo, anywhere: its AI reading is reused. */
@@ -393,12 +448,22 @@ export async function triage(input: TriageInput): Promise<Report> {
   const oldPhoto = oldPhotoReason(exifDate(asset.image_metadata), new Date(createdAt));
   const recycled = knownOldReason(asset.phash ?? null, library);
   const reviewReasons = [...aiReviewReasons(findings), ...(recycled ? [recycled] : []), ...(oldPhoto ? [oldPhoto] : [])];
-  const firstPass = scoreReport({ findings, corroborations: 0, reviewReasons });
-  const match = matchReport(
+  let firstPass = scoreReport({ findings, corroborations: 0, reviewReasons });
+  let match = reviewReasons.length ? { duplicateOf: null, corroborates: [] } : matchReport(
     { lat, lng, phash: asset.phash ?? null, primaryCategory: firstPass.primaryCategory, categories: findings.categories, createdAt },
     candidatesFrom(existing, input.publicId),
   );
+  // A known image at a different place/time is evidence for human review, not
+  // a second severe incident or an independent vote for a nearby report.
+  if (!reviewReasons.length && asset.phash && !match.duplicateOf && firstSamePhoto(asset.phash, existing, input.publicId)) {
+    reviewReasons.push(REASON_REUSED_PHOTO);
+    firstPass = scoreReport({ findings, corroborations: 0, reviewReasons });
+    match = { duplicateOf: null, corroborates: [] };
+  }
 
+  // While the image check is pending this report can't vote for others yet.
+  const imageReview = initialReview(input.resourceType, input.assessImage ?? false);
+  const votesNow = !reviewPending({ imageReview }) && lat !== null && !match.duplicateOf;
   const draft: Report = {
     publicId: input.publicId,
     resourceType: input.resourceType,
@@ -434,11 +499,12 @@ export async function triage(input: TriageInput): Promise<Report> {
     phash: asset.phash ?? null,
     reporterHash: input.reporterHash ?? null,
     history: addHistory([], "filed", new Date(createdAt)),
+    imageReview: { ...imageReview, votesAdded: votesNow },
   };
   const report = await save(draft);
 
-  // Bump the reports this one corroborates (or duplicates) and re-score them.
-  const bumpIds = match.duplicateOf ? [match.duplicateOf] : match.corroborates;
+  // A repeated image is not independent evidence and must never raise priority.
+  const bumpIds = votesNow ? match.corroborates : [];
   await bump(existing.filter((r) => bumpIds.includes(r.publicId)));
 
   return report;
@@ -460,9 +526,9 @@ export async function setStatus(publicId: string, resourceType: "image" | "video
 
 /**
  * A coordinator (or the reporter, with a WhatsApp location pin) places a report on the
- * map. The first time a report gets a location it can also corroborate nearby reports
- * of the same incident (and be corroborated by them); moving the pin later only moves
- * the pin, so nothing is counted twice.
+ * map. A first location can corroborate nearby reports (once its image check allows).
+ * Every move rechecks photo duplication and derived incident membership, but a report
+ * only ever casts its votes once.
  */
 export async function setLocation(
   publicId: string,
@@ -472,7 +538,6 @@ export async function setLocation(
   source: Extract<LocationSource, "coordinator" | "whatsapp_pin"> = "coordinator",
 ): Promise<Report> {
   const target = await getReport(publicId, resourceType);
-  const firstLocation = target.lat === null;
   const located: Report = {
     ...target,
     lat,
@@ -480,16 +545,95 @@ export async function setLocation(
     locationSource: source,
     history: addHistory(target.history, source === "whatsapp_pin" ? "wa_pin" : "pinned"),
   };
-  if (!firstLocation || target.duplicateOf) return save(located);
-
   const existing = await listReports();
-  const match = matchReport(
-    { lat, lng, phash: null, primaryCategory: target.primaryCategory, categories: target.categories, createdAt: target.createdAt },
+  const match = target.needsReview ? { duplicateOf: null, corroborates: [] } : matchReport(
+    { lat, lng, phash: target.phash, primaryCategory: target.primaryCategory, categories: target.categories, createdAt: target.createdAt },
     candidatesFrom(existing, publicId),
   );
-  const saved = await save({ ...located, corroborations: target.corroborations + match.corroborates.length });
-  await bump(existing.filter((r) => match.corroborates.includes(r.publicId)));
+  const canVote = !target.imageReview.votesAdded && !reviewPending(target) && !imageConcern(target) && !match.duplicateOf;
+  const newVotes = canVote ? match.corroborates : [];
+  const movedCopy = target.duplicateOf && !match.duplicateOf;
+  const saved = await save({ ...located, duplicateOf: match.duplicateOf,
+    reviewReasons: movedCopy ? [...new Set([...target.reviewReasons, REASON_REUSED_PHOTO])] : target.reviewReasons,
+    corroborations: target.corroborations + newVotes.length,
+    imageReview: { ...target.imageReview, votesAdded: target.imageReview.votesAdded || canVote } });
+  await bump(existing.filter((r) => newVotes.includes(r.publicId)));
   return saved;
+}
+
+// ── Delayed image check ──────────────────────────────────────────────────────
+
+/** Cast this report's corroboration votes for nearby reports, once, when its image check allows. */
+async function castVotes(r: Report): Promise<Report> {
+  if (r.imageReview.votesAdded || r.lat === null || r.lng === null || r.duplicateOf || r.needsReview) return r;
+  if (reviewPending(r) || imageConcern(r) || r.status === "rejected") return r;
+  const existing = await listReports();
+  const match = matchReport(
+    { lat: r.lat, lng: r.lng, phash: r.phash, primaryCategory: r.primaryCategory, categories: r.categories, createdAt: r.createdAt },
+    candidatesFrom(existing, r.publicId),
+  );
+  const votes = match.duplicateOf ? [] : match.corroborates;
+  await bump(existing.filter((x) => votes.includes(x.publicId)));
+  return { ...r, imageReview: { ...r.imageReview, votesAdded: true } };
+}
+
+const isJob = (r: Report, dueAt: string) => effectiveReview(r.imageReview).state === "pending" && r.imageReview.dueAt === dueAt;
+
+export interface ReviewJobOptions extends AssessOptions {
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+}
+
+/**
+ * Background job for one report, run from after(): wait until it is due, ask Gemini,
+ * then re-read the report so responder actions taken meanwhile are kept. The due time
+ * is the job's key: a finished, overdue or replaced job does nothing.
+ */
+export async function runImageReview(
+  report: Pick<Report, "publicId" | "resourceType" | "imageReview">,
+  opts: ReviewJobOptions = {},
+): Promise<Report | null> {
+  const dueAt = report.imageReview.dueAt;
+  if (report.imageReview.state !== "pending" || !dueAt) return null;
+  const wait = Date.parse(dueAt) - (opts.now ?? Date.now)();
+  if (wait > 0) await (opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))))(wait);
+
+  const before = await getReport(report.publicId, report.resourceType).catch(() => null);
+  if (!before || !isJob(before, dueAt)) return before;
+  const result = await assessImage(originalUrl({ publicId: report.publicId, resourceType: "image" }), opts);
+  const fresh = await getReport(report.publicId, report.resourceType).catch(() => null);
+  if (!fresh || !isJob(fresh, dueAt)) return fresh;
+  return finishReview(fresh, result);
+}
+
+/** Stores the assessment only; score, status and review reasons stay as they are. */
+async function finishReview(r: Report, a: Assessment): Promise<Report> {
+  const reviewed: Report = {
+    ...r,
+    imageReview: {
+      ...r.imageReview,
+      state: a.state,
+      dueAt: null,
+      at: new Date().toISOString(),
+      model: a.model,
+      concerns: a.state === "suspected" ? a.concerns : [],
+    },
+  };
+  return save(await castVotes(reviewed));
+}
+
+/**
+ * "Accept image evidence after review": an explicit human override of the image concern.
+ * It restores incident eligibility (if nothing else holds the report back) but does not
+ * mark it verified, clear other review reasons or erase the model's assessment.
+ */
+export async function acceptImageEvidence(publicId: string, resourceType: "image" | "video"): Promise<Report> {
+  const target = await getReport(publicId, resourceType);
+  if (target.imageReview.state !== "suspected") throw new Error("This report has no image concern to accept.");
+  const accepted = target.imageReview.acceptedAt
+    ? target
+    : { ...target, imageReview: { ...target.imageReview, acceptedAt: new Date().toISOString() }, history: addHistory(target.history, "image_accepted") };
+  return save(await castVotes(accepted));
 }
 
 // Ids the fact-check page looked up and didn't find, so made-up links can't drain the Admin API quota.

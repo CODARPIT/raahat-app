@@ -16,6 +16,7 @@ import { mergeReports } from "../src/lib/merge";
 import { placeHint, placesFromNote } from "../src/lib/place";
 import { demoFindings, findingsFromLive, getFindings, parseJsonReply } from "../src/lib/vision";
 import type { Report, VisionFindings } from "../src/lib/types";
+import { NOT_ASSESSED } from "../src/lib/image-review";
 
 const base: VisionFindings = {
   categories: ["flood"],
@@ -103,7 +104,7 @@ const existing: Candidate[] = [
 ];
 
 test("a forwarded copy of the same photo is a duplicate of the earliest primary", () => {
-  const m = matchReport({ lat: 26.15, lng: 91.74, phash: "a1b2c3d4e5f60719", primaryCategory: "trapped_or_injured", createdAt: now }, existing);
+  const m = matchReport({ lat: 26.1451, lng: 91.7367, phash: "a1b2c3d4e5f60719", primaryCategory: "trapped_or_injured", createdAt: now }, existing);
   assert.equal(m.duplicateOf, "a");
   assert.deepEqual(m.corroborates, []);
 });
@@ -226,7 +227,7 @@ function report(over: Partial<Report> = {}): Report {
     categories: ["flood"], primaryCategory: "flood", severity: "low", score: 20, breakdown: [],
     peopleVisible: 0, peopleInDanger: false, waterDepth: "unknown", accessBlocked: false, summary: "flood", summaryHi: "",
     status: "new", needsReview: false, reviewReasons: [], duplicateOf: null, corroborations: 0,
-    originalBytes: 0, thumbBytes: 0, aiMode: "demo", phash: null, reporterHash: null, history: [], ...over,
+    originalBytes: 0, thumbBytes: 0, aiMode: "demo", phash: null, reporterHash: null, history: [], imageReview: NOT_ASSESSED, ...over,
   };
 }
 

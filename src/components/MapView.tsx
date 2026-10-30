@@ -3,10 +3,13 @@
 // Leaflet map. Loaded with next/dynamic (ssr: false) because Leaflet needs `window`.
 import "leaflet/dist/leaflet.css";
 import { useEffect } from "react";
-import { divIcon } from "leaflet";
+import { divIcon, latLng } from "leaflet";
 import type { GeoJsonObject } from "geojson";
-import { CircleMarker, GeoJSON, MapContainer, Marker, Pane, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
+import { Circle, CircleMarker, GeoJSON, MapContainer, Marker, Pane, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import { isLocated, type Report } from "@/lib/types";
+import type { Incident } from "@/lib/incidents";
+import { useI18n } from "@/components/LocaleProvider";
+import { fmt } from "@/lib/i18n";
 import regionalOverview from "@/lib/regional-overview.json";
 
 const COLOR = { critical: "#b3122e", high: "#c98200", moderate: "#3f7690", low: "#7c8b87" } as const;
@@ -31,6 +34,22 @@ function FlyTo({ lat, lng, zoom = 14 }: { lat: number; lng: number; zoom?: numbe
   return null;
 }
 
+function FitIncident({ incident }: { incident: Incident }) {
+  const map = useMap();
+  const { id, lat, lng, radiusM } = incident;
+  useEffect(() => {
+    const fit = () => {
+      map.invalidateSize({ animate: false });
+      map.fitBounds(latLng(lat, lng).toBounds(radiusM * 2.6), { padding: [24, 24], maxZoom: 16, animate: false });
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(map.getContainer());
+    fit();
+    return () => observer.disconnect();
+  }, [id, lat, lng, radiusM, map]);
+  return null;
+}
+
 function Picker({ onPick }: { onPick: (lat: number, lng: number) => void }) {
   useMapEvents({ click: (e) => onPick(e.latlng.lat, e.latlng.lng) });
   return null;
@@ -38,6 +57,7 @@ function Picker({ onPick }: { onPick: (lat: number, lng: number) => void }) {
 
 export interface MapViewProps {
   reports?: Report[];
+  incidents?: Incident[];
   selectedId?: string | null;
   onSelect?: (r: Report) => void;
   onPick?: (lat: number, lng: number) => void;
@@ -53,9 +73,12 @@ export interface MapViewProps {
   regionalOverview?: boolean;
 }
 
-export default function MapView({ reports = [], selectedId, onSelect, onPick, pin, suggested, picking, center, zoom = 12, scrollWheelZoom = true, regionalOverview: showRegionalOverview = false }: MapViewProps) {
+export default function MapView({ reports = [], incidents = [], selectedId, onSelect, onPick, pin, suggested, picking, center, zoom = 12, scrollWheelZoom = true, regionalOverview: showRegionalOverview = false }: MapViewProps) {
+  const { t } = useI18n();
   const located = reports.filter(isLocated);
   const selected = located.find((r) => r.publicId === selectedId);
+  const selectedIncident = incidents.find((incident) => incident.reportIds.includes(selectedId ?? ""));
+  const visibleIds = new Set(located.map((report) => report.publicId));
   const start: [number, number] =
     center ?? (located[0] ? [located[0].lat, located[0].lng] : [28.6139, 77.209]); // New Delhi
 
@@ -74,6 +97,16 @@ export default function MapView({ reports = [], selectedId, onSelect, onPick, pi
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
+      {incidents.filter((incident) => incident.reportIds.some((id) => visibleIds.has(id))).map((incident) => (
+        <Circle key={`incident-${incident.id}`} center={[incident.lat, incident.lng]} radius={incident.radiusM}
+          pathOptions={{ color: COLOR[incident.severity], weight: selectedIncident?.id === incident.id ? 3 : 1.5, dashArray: incident.provisional ? "2 6" : "6 5", fillColor: COLOR[incident.severity], fillOpacity: incident.provisional ? 0.03 : 0.08, className: "incident-radius" }}
+          eventHandlers={{ click: () => {
+            const member = located.filter((report) => incident.reportIds.includes(report.publicId)).sort((a, b) => b.score - a.score)[0];
+            if (member) onSelect?.(member);
+          } }}>
+          <Tooltip>{fmt(t.report.incidentAreaLabel, { radius: incident.radiusM })}<br />{fmt(t.report.incidentLinked, { n: incident.reportIds.length })}{incident.provisional && <><br />{t.report.incidentProvisional}</>}</Tooltip>
+        </Circle>
+      ))}
       {located
         .filter((r) => !r.duplicateOf)
         .map((r) => (
@@ -116,7 +149,7 @@ export default function MapView({ reports = [], selectedId, onSelect, onPick, pi
         </CircleMarker>
       )}
       {suggested && !selected && <FlyTo lat={suggested.lat} lng={suggested.lng} zoom={15} />}
-      {selected && <FlyTo lat={selected.lat} lng={selected.lng} zoom={17} />}
+      {selectedIncident ? <FitIncident incident={selectedIncident} /> : selected && <FlyTo lat={selected.lat} lng={selected.lng} zoom={17} />}
       {pin && <FlyTo lat={pin.lat} lng={pin.lng} />}
       {onPick && <Picker onPick={onPick} />}
     </MapContainer>

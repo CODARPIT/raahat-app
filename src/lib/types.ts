@@ -2,7 +2,8 @@
 // asset's contextual metadata and tags, so Cloudinary is the only datastore.
 
 import type { HistoryEntry } from "./history";
-export type { HistoryEntry };
+import type { ImageReview } from "./image-review";
+export type { HistoryEntry, ImageReview };
 
 export const CATEGORIES = [
   "trapped_or_injured",
@@ -84,6 +85,12 @@ export interface Report {
   phash: string | null;
   reporterHash: string | null; // salted hash of a WhatsApp number or Telegram chat, never the number itself
   history: HistoryEntry[]; // audit trail: filed, status changes, pins (newest last)
+  /** Delayed Gemini check for signs of AI generation; separate from the hazard score. */
+  imageReview: ImageReview;
+  /** Derived API fields, not separately persisted or trusted from client input. */
+  incidentId?: string | null;
+  incidentRadiusM?: number | null;
+  incidentReportCount?: number;
 }
 
 /** A report that has a location. Only these can corroborate or be drawn on the map. */

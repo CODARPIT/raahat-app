@@ -1,21 +1,26 @@
 import { errorMessage } from "@/lib/errors";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { isResponder } from "@/lib/auth";
 import { coarsen } from "@/lib/triage";
-import { listReportsDetailed, setLocation, setStatus, triage } from "@/lib/reports";
+import { imageConcern } from "@/lib/image-review";
+import { issueReceipt } from "@/lib/receipt";
+import { acceptImageEvidence, listReports, listReportsDetailed, runImageReview, setLocation, setStatus, triage } from "@/lib/reports";
+import { annotateIncidents, buildIncidents } from "@/lib/incidents";
 import { clientIp, createLimiter, tooMany } from "@/lib/rate-limit";
 import { aiMode, getAiQuota } from "@/lib/vision";
 import { isLocated, type LocationSource, type Report, type Status } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60; // AI Vision + dedupe can take a few seconds
+// Triage takes a few seconds; the delayed Gemini image check then runs in after() (10 s wait + up to 20 s).
+export const maxDuration = 120;
 
 // Each filed report costs AI Vision quota, so one address can file at most 10 a minute.
 const fileLimit = createLimiter({ max: 10, windowMs: 60_000 });
 
 /**
- * Public view: no note, place hint, hashes or review reasons, location rounded to
- * ~110 m. Only located, unflagged, unrejected reports are public at all.
+ * Public view: no note, place hint, hashes, review reasons or image-check explanation,
+ * location rounded to ~110 m. Only located, unflagged, unrejected reports whose image
+ * isn't under suspicion are public at all.
  */
 function publicView(r: Report): Report {
   return {
@@ -28,21 +33,27 @@ function publicView(r: Report): Report {
     phash: null,
     reporterHash: null,
     history: [],
+    imageReview: { ...r.imageReview, concerns: [], model: null },
   };
 }
 
 function isPublic(r: Report) {
-  return isLocated(r) && !r.needsReview && r.status !== "rejected";
+  return isLocated(r) && !r.needsReview && !imageConcern(r) && r.status !== "rejected";
 }
 
 export async function GET() {
   try {
     const [{ reports, stale }, responder] = await Promise.all([listReportsDetailed(), isResponder()]);
+    // Decide membership using exact locations before rounding the public view.
+    const visible = responder ? reports : reports.filter(isPublic);
+    const incidents = buildIncidents(visible);
+    const annotated = annotateIncidents(visible, incidents);
     return NextResponse.json({
       responder,
       stale,
       ...(responder ? { ai: { mode: aiMode(), quota: getAiQuota() } } : {}),
-      reports: responder ? reports : reports.filter(isPublic).map(publicView),
+      reports: responder ? annotated : annotated.map(publicView),
+      incidents: responder ? incidents : incidents.map((incident) => ({ ...incident, lat: coarsen(incident.lat), lng: coarsen(incident.lng) })),
     });
   } catch (err) {
     return NextResponse.json({ error: errorMessage(err), reports: [] }, { status: 500 });
@@ -86,8 +97,15 @@ export async function POST(req: Request) {
       note: String(body.note ?? "").slice(0, 500),
       lang: body.lang === "hi" ? "hi" : "en",
       channel: "web",
+      assessImage: true,
     });
-    return NextResponse.json({ report: publicView(report) });
+    // Runs after the response, even if the reporter closes the page.
+    if (report.imageReview.state === "pending") {
+      after(() => runImageReview(report).then(() => undefined, (err) => console.warn("[raahat] Image check not saved:", errorMessage(err))));
+    }
+    const incidents = buildIncidents((await listReports()).filter(isPublic));
+    const [annotated] = annotateIncidents([report], incidents);
+    return NextResponse.json({ report: publicView(annotated), receipt: issueReceipt(report.publicId, report.resourceType) });
   } catch (err) {
     return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
@@ -95,7 +113,7 @@ export async function POST(req: Request) {
 
 const STATUSES: Status[] = ["new", "verified", "dispatched", "resolved", "rejected"];
 
-/** Responders only: `{ publicId, status }` or `{ publicId, lat, lng }` (coordinator pin). */
+/** Responders only: `{ publicId, status }`, `{ publicId, lat, lng }` (coordinator pin) or `{ publicId, acceptImage: true }`. */
 export async function PATCH(req: Request) {
   if (!(await isResponder())) {
     return NextResponse.json({ error: "Enter the control-room passcode to change a report." }, { status: 401 });
@@ -106,10 +124,14 @@ export async function PATCH(req: Request) {
     status?: Status;
     lat?: number;
     lng?: number;
+    acceptImage?: boolean;
   };
   const resourceType = body.resourceType === "video" ? "video" : "image";
   if (!body.publicId) return NextResponse.json({ error: "Which report? publicId is missing." }, { status: 400 });
   try {
+    if (body.acceptImage === true) {
+      return NextResponse.json({ report: await acceptImageEvidence(body.publicId, resourceType) });
+    }
     if (body.lat !== undefined || body.lng !== undefined) {
       const lat = Number(body.lat);
       const lng = Number(body.lng);
