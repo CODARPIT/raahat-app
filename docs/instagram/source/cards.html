@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Raahat Instagram cards</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Mukta:wght@400;500;600;700;800&display=block" rel="stylesheet">
+<style>
+  :root {
+    --navy: #0f2f4f; --navy-2: #0a2038; --mist: #f1f4f8; --ink: #14233a; --soft: #4a5b70; --line: #d5dde7;
+    --saffron: #ff9933; --green: #138808; --red: #b3122e; --amber: #c98200; --blue: #1d5fa0; --gold: #e8b04a;
+    --site: "raahat-kappa.vercel.app";
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #888; display: grid; gap: 40px; padding: 40px; justify-content: center; font-family: "Mukta", sans-serif; }
+  .slide { width: 1080px; height: 1350px; position: relative; overflow: hidden; background: var(--mist); color: var(--ink); display: flex; flex-direction: column; }
+  .slide.square { height: 1080px; }
+  .slide.story { height: 1920px; }
+  .band { height: 18px; flex: none; background: linear-gradient(90deg, var(--saffron) 0 33.33%, #fff 33.33% 66.66%, var(--green) 66.66%); }
+  .head { flex: none; display: flex; align-items: center; gap: 22px; padding: 36px 64px 28px; border-bottom: 2px solid var(--line); background: #fff; }
+  .wordmark { line-height: 1.05; }
+  .wordmark .hi { font-size: 44px; font-weight: 800; color: var(--navy); }
+  .wordmark .en { font-size: 26px; font-weight: 800; letter-spacing: 8px; color: var(--navy); }
+  .wordmark .sub { font-size: 21px; font-weight: 600; color: var(--soft); margin-top: 4px; }
+  .head .tag { margin-left: auto; font-size: 22px; font-weight: 700; color: var(--blue); border: 2px solid var(--blue); padding: 6px 16px; border-radius: 999px; }
+  .body { flex: 1; padding: 52px 64px 32px; display: flex; flex-direction: column; }
+  .foot { flex: none; background: var(--navy-2); color: #e9f1ef; display: flex; align-items: center; justify-content: space-between; padding: 0 64px; height: 104px; font-size: 26px; font-weight: 700; border-top: 6px solid var(--green); }
+  .foot .page { font-size: 24px; color: var(--gold); letter-spacing: 2px; }
+  .note { flex: none; font-size: 21px; color: var(--soft); padding: 0 64px 22px; text-align: center; }
+  .note b { color: var(--red); }
+
+  .eyebrow { font-size: 26px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase; color: var(--blue); margin: 0 0 12px; }
+  h1 { font-size: 76px; line-height: 1.05; margin: 0 0 12px; font-weight: 800; color: var(--navy); }
+  h1 .hi, h2 .hi { display: block; font-size: 0.62em; font-weight: 700; color: var(--soft); margin-top: 8px; }
+  h2 { font-size: 58px; line-height: 1.08; margin: 0 0 30px; font-weight: 800; color: var(--navy); }
+  .rule { width: 120px; height: 8px; margin: 18px 0 34px; background: linear-gradient(90deg, var(--saffron) 0 33%, var(--line) 33% 66%, var(--green) 66%); border-radius: 4px; }
+  p.lead { font-size: 34px; line-height: 1.35; margin: 0 0 24px; color: var(--ink); }
+  .hi-text { font-size: 30px; line-height: 1.4; color: var(--soft); }
+
+  /* Cover (navy) */
+  .navy { background: radial-gradient(1200px 700px at 80% 0%, #1d4f73 0%, var(--navy) 55%, var(--navy-2) 100%); color: #fff; }
+  .navy .body { justify-content: center; align-items: center; text-align: center; }
+  .navy h1 { color: #fff; font-size: 74px; }
+  .navy h1 .hi { color: #f6d58f; }
+  .navy p.lead { color: #dce7f2; }
+  .navy .rule { margin-left: auto; margin-right: auto; }
+  .navy .note { color: #a9bccf; }
+  .navy .note b { color: #ffb3bf; }
+  .swipe { margin-top: 34px; font-size: 28px; font-weight: 800; color: var(--gold); letter-spacing: 2px; }
+  .brand-big .hi { font-size: 86px; font-weight: 800; line-height: 1; }
+  .brand-big .en { font-size: 40px; font-weight: 800; letter-spacing: 16px; margin: 6px 0 0 16px; }
+
+  /* Tiles and steps */
+  .tiles { display: grid; gap: 22px; }
+  .tile { background: #fff; border: 2px solid var(--line); border-left: 12px solid var(--saffron); border-radius: 14px; padding: 26px 30px; }
+  .tile b { display: block; font-size: 36px; line-height: 1.15; color: var(--navy); }
+  .tile span { display: block; font-size: 27px; color: var(--soft); margin-top: 6px; line-height: 1.35; }
+  .tile.red { border-left-color: var(--red); }
+  .tile.green { border-left-color: var(--green); }
+  .tile.blue { border-left-color: var(--blue); }
+  .punch { margin-top: auto; background: var(--navy); color: #fff; border-radius: 14px; padding: 26px 32px; font-size: 34px; font-weight: 700; line-height: 1.3; }
+  .punch .hi { display: block; color: #f6d58f; font-size: 28px; font-weight: 600; margin-top: 6px; }
+
+  .steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 20px; counter-reset: s; }
+  .steps li { counter-increment: s; display: grid; grid-template-columns: 84px 1fr; gap: 24px; align-items: start; background: #fff; border: 2px solid var(--line); border-radius: 14px; padding: 24px 28px; }
+  .steps li::before { content: counter(s); display: grid; place-items: center; width: 84px; height: 84px; border-radius: 50%; background: var(--navy); color: #fff; font-size: 42px; font-weight: 800; }
+  .steps b { display: block; font-size: 34px; color: var(--navy); line-height: 1.15; }
+  .steps span { display: block; font-size: 26px; color: var(--soft); line-height: 1.35; margin-top: 4px; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .channel { background: #fff; border: 2px solid var(--line); border-top: 12px solid var(--blue); border-radius: 14px; padding: 28px; }
+  .channel h3 { font-size: 38px; margin: 0 0 6px; color: var(--navy); }
+  .channel .handle { font-size: 30px; font-weight: 800; color: var(--blue); margin: 6px 0 14px; line-height: 1.2; }
+  .channel ol { margin: 0; padding-left: 34px; font-size: 27px; line-height: 1.4; color: var(--ink); }
+  .call { margin-top: 30px; display: flex; align-items: center; gap: 28px; background: #fff; border: 4px solid var(--red); border-radius: 16px; padding: 22px 30px; }
+  .call .num { font-size: 104px; font-weight: 800; color: var(--red); line-height: 1; }
+  .call div { font-size: 30px; font-weight: 700; line-height: 1.3; }
+  .call div span { display: block; color: var(--soft); font-weight: 600; font-size: 27px; }
+
+  /* Sample fact-check cards */
+  .sample { position: relative; width: 420px; aspect-ratio: 4 / 5; border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 18px 40px rgb(10 32 56 / 0.35);
+    background: linear-gradient(180deg, rgb(0 0 0 / 0) 35%, rgb(0 0 0 / 0.78)), repeating-linear-gradient(170deg, #3d6f93 0 22px, #34627f 22px 44px), #2e5875; }
+  .sample.false { filter: none; background: linear-gradient(180deg, rgb(0 0 0 / 0) 35%, rgb(0 0 0 / 0.78)), repeating-linear-gradient(170deg, #777 0 22px, #666 22px 44px), #555; }
+  .sample .sb { background: var(--green); color: #fff; font-weight: 800; font-size: 28px; text-align: center; padding: 16px 8px; letter-spacing: 1px; }
+  .sample.false .sb { background: var(--red); }
+  .sample .st { padding: 20px; color: #fff; display: grid; gap: 6px; }
+  .sample .st b { font-size: 27px; }
+  .sample .st span { font-size: 19px; }
+  .sample .st i { font-style: normal; font-size: 19px; font-weight: 700; color: #ffe9a8; }
+  .samples { display: flex; gap: 40px; justify-content: center; margin: 10px 0 34px; }
+  .samples.tilt .sample:first-child { transform: rotate(-4deg); }
+  .samples.tilt .sample:last-child { transform: rotate(4deg); }
+  .samples.small { margin: 0 0 26px; }
+  .samples.small .sample { width: 330px; }
+  .samples.small .sb { font-size: 23px; padding: 12px 6px; }
+  .samples.small .st b { font-size: 23px; }
+  .samples.small .st span, .samples.small .st i { font-size: 16px; }
+  .check-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 20px; }
+  .check-list li { display: grid; grid-template-columns: 64px 1fr; gap: 20px; align-items: start; background: #fff; border: 2px solid var(--line); border-radius: 14px; padding: 22px 26px; font-size: 29px; line-height: 1.35; }
+  .check-list li i { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; color: #fff; font-style: normal; font-weight: 800; font-size: 36px; background: var(--green); }
+  .check-list li i.r { background: var(--red); }
+  .check-list li i.b { background: var(--blue); }
+  .check-list li i.a { background: var(--amber); }
+  .check-list b { color: var(--navy); }
+  .url { display: inline-block; font-weight: 800; color: var(--blue); }
+
+  /* Safety */
+  .hazard-head { display: flex; align-items: center; gap: 22px; margin-bottom: 26px; }
+  .hazard-head .ico { width: 110px; height: 110px; border-radius: 24px; display: grid; place-items: center; background: var(--blue); color: #fff; flex: none; }
+  .hazard-head h2 { margin: 0; font-size: 62px; }
+  .do-dont { display: grid; gap: 22px; }
+  .dd { background: #fff; border: 2px solid var(--line); border-radius: 14px; padding: 24px 30px; }
+  .dd h3 { margin: 0 0 12px; font-size: 34px; color: var(--green); display: flex; align-items: center; gap: 12px; }
+  .dd.dont h3 { color: var(--red); }
+  .dd ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+  .dd li { position: relative; padding-left: 46px; font-size: 28px; line-height: 1.35; }
+  .dd li::before { content: "✓"; position: absolute; left: 0; top: 0; font-weight: 800; color: var(--green); font-size: 30px; }
+  .dd.dont li::before { content: "✕"; color: var(--red); }
+  .src { margin-top: auto; padding-top: 20px; font-size: 22px; color: var(--soft); }
+
+  .numbers { display: grid; gap: 16px; }
+  .number { display: grid; grid-template-columns: 250px 1fr; align-items: center; background: #fff; border: 2px solid var(--line); border-radius: 16px; overflow: hidden; }
+  .number .n { background: var(--navy); color: #fff; font-size: 74px; font-weight: 800; text-align: center; padding: 8px 0; height: 100%; display: grid; place-items: center; }
+  .number.main .n { background: var(--red); }
+  .number div:last-child { padding: 12px 30px; font-size: 32px; font-weight: 700; line-height: 1.2; color: var(--navy); }
+  .number div:last-child span { display: block; font-size: 27px; font-weight: 600; color: var(--soft); margin-top: 6px; }
+
+  /* Profile picture */
+  .pfp { background: #fff; display: grid; place-items: center; }
+
+  /* Story */
+  .story .body { justify-content: center; text-align: center; align-items: center; padding: 60px 80px; }
+  .story h1 { font-size: 96px; }
+  .story .big-url { margin-top: 30px; font-size: 44px; font-weight: 800; color: #fff; background: var(--blue); border-radius: 18px; padding: 22px 34px; }
+  .story .or { margin: 24px 0; font-size: 32px; color: #a9bccf; font-weight: 700; }
+  .story .tg { font-size: 44px; font-weight: 800; color: var(--gold); }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ A. Meet Raahat (carousel, 5) ═══════════ -->
+
+<section class="slide navy" data-name="01-intro-1-cover">
+  <div class="band"></div>
+  <div class="body">
+    <div data-seal="300" style="margin-bottom:30px"></div>
+    <div class="brand-big"><div class="hi">राहत</div><div class="en">RAAHAT</div></div>
+    <div class="rule"></div>
+    <h1>When the water rises, every photo is a call for help.<span class="hi">जब पानी बढ़ता है, हर फ़ोटो मदद की पुकार है।</span></h1>
+    <p class="lead">Raahat turns citizen disaster photos into a ranked list, so control rooms reach the most urgent calls first.</p>
+    <div class="swipe">SWIPE →</div>
+  </div>
+  <p class="note">A citizen project · not an official government service · <b>In danger? Call 112</b></p>
+  <div class="foot"><span>raahat-kappa.vercel.app</span><span class="page">1 / 5</span></div>
+</section>
+
+<section class="slide" data-name="01-intro-2-problem">
+  <div class="band"></div>
+  <div class="head" data-head></div>
+  <div class="body">
+    <p class="eyebrow">The problem · समस्या</p>
+    <h2>In a flood, control rooms drown in photos.</h2>
+    <div class="tiles">
+      <div class="tile"><b>Thousands of forwarded photos</b><span>The same picture arrives fifty times from fifty phones.</span></div>
+      <div class="tile red"><b>No location</b><span>Forwarded photos lose their GPS. Where is this, exactly?</span></div>
+      <div class="tile blue"><b>Old and fake photos mixed in</b><span>A 2017 flood photo goes viral again as "today".</span></div>
+    </div>
+    <div class="punch">Responders can't tell who needs help first.<span class="hi">किसे पहले मदद चाहिए, यह पता नहीं चलता।</span></div>
+  </div>
+  <div class="foot"><span>raahat-kappa.vercel.app</span><span class="page">2 / 5</span></div>
+</section>
+
+<section class="slide" data-name="01-intro-3-how">
+  <div class="band"></div>
+  <div class="head" data-head></div>
+  <div class="body">
+    <p class="eyebrow">How it works · यह कैसे काम करता है</p>
+    <h2>One photo to a ranked report in under a minute.</h2>
+    <ol class="steps">
+      <li><div><b>A citizen sends a photo</b><span>From the website or Telegram, in Hindi or English. Works on 2G.</span></div></li>
+      <li><div><b>AI reads it</b><span>Names the hazard, counts people, judges water depth, flags screenshots and recycled photos.</span></div></li>
+      <li><div><b>Duplicates merge, faces blur</b><span>The same photo forwarded fifty times becomes one report. Every face is pixelated.</span></div></li>
+      <li><div><b>Responders act</b><span>A ranked queue on a live map, with every point of the score explained.</span></div></li>
+    </ol>
+  </div>
+  <div class="foot"><span>raahat-kappa.vercel.app</span><span class="page">3 / 5</span></div>
+</section>
+
+<section class="slide" data-name="01-intro-4-report">
+  <div class="band"></div>
+  <div class="head" data-head></div>
+  <div class="body">
+    <p class="eyebrow">How to report · रिपोर्ट कैसे करें</p>
+    <h2>Two ways to send a report.</h2>
+    <div class="two">
+      <div class="channel">
+        <h3>Telegram</h3>
+        <div class="handle">@raahatgov_bot</div>
+        <ol><li>Tap Start</li><li>Send a photo</li><li>Tap “Send my location”</li><li>Get the priority and a tracking link</li></ol>
+      </div>
+      <div class="channel" style="border-top-color:var(--saffron)">
+        <h3>Website</h3>
+        <div class="handle">raahat-kappa.vercel.app<wbr>/report</div>
+        <ol><li>Take a photo</li><li>Share your location, or describe the place</li><li>Send. It saves on your phone if the network drops</li></ol>
+      </div>
+    </div>
+    <div class="call"><span class="num">112</span><div>Anyone in danger? Call 112 first.<span>किसी की जान ख़तरे में हो तो पहले 112 पर कॉल करें।</span></div></div>
+  </div>
+  <div class="foot"><span>raahat-kappa.vercel.app</span><span class="page">4 / 5</span></div>
+</section>
+
+<section class="slide" data-name="01-intro-5-factcheck">
+  <div class="band"></div>
+  <div class="head" data-head></div>
+  <div class="body">
+    <p class="eyebrow">Fact check · तथ्य जाँच</p>
+    <h2>Is that reel real?<span class="hi">क्या यह वायरल फ़ोटो सच है?</span></h2>
+    <div class="samples tilt small">
+      <div class="sample"><div class="sb">VERIFIED BY RAAHAT</div><div class="st"><b>Flood: road under knee-deep water</b><span>Reported 29 Oct 2026, 4 reports</span><i>Check it at raahat-kappa.vercel.app/v/…</i></div></div>
+      <div class="sample false"><div class="sb">FALSE - DO NOT SHARE</div><div class="st"><b>Flooding (false report)</b><span>Old photo, Assam floods 2022</span><i>Check it at raahat-kappa.vercel.app/v/…</i></div></div>
+    </div>
+    <ul class="check-list">
+      <li><i>✓</i><div>We post a card only after a <b>control-room person</b> checks the report.</div></li>
+      <li><i class="b">?</i><div>Saw a viral photo? Check it at <span class="url">raahat-kappa.vercel.app/check</span> or forward it to <span class="url">@raahatgov_bot</span>.</div></li>
+    </ul>
+  </div>
+  <div class="foot"><span>Follow for verified updates</span><span class="page">5 / 5</span></div>
+</section>
+
+<!-- ═══════════ B. Spot a genuine Raahat post (carousel, 3) ═══════════ -->
+
+<section class="slide navy" data-name="02-genuine-1-cover">
+  <div class="band"></div>
+  <div class="body">
+    <p class="eyebrow" style="color:var(--gold)">Before you forward · आगे भेजने से पहले</p>
+    <h1>How to spot a genuine Raahat post<span class="hi">असली राहत पोस्ट कैसे पहचानें</span></h1>
+    <div class="rule"></div>
+    <div class="samples tilt">
+      <div class="sample"><div class="sb">VERIFIED BY RAAHAT</div><div class="st"><b>Flood: road under knee-deep water</b><span>Reported 29 Oct 2026, 4 reports</span><i>Check it at raahat-kappa.vercel.app/v/…</i></div></div>
+      <div class="sample false"><div class="sb">FALSE - DO NOT SHARE</div><div class="st"><b>Flooding (false report)</b><span>Old photo, Assam floods 2022</span><i>Check it at raahat-kappa.vercel.app/v/…</i></div></div>
+    </div>
+    <div class="swipe">SWIPE →</div>
+  </div>
+  <p class="note">A citizen project · not an official government service</p>
+  <div class="foot"><span>raahat-kappa.vercel.app</span><span class="page">1 / 3</span></div>
+</section>
+
+<section class="slide" data-name="02-genuine-2-colours">
+  <div class="band"></div>
+  <div class="head" data-head></div>
+  <div class="body">
+    <p class="eyebrow">Read the band · रंग पहचानें</p>
+    <h2>Two colours, one rule: open the link.</h2>
+    <ul class="check-list">
+      <li><i>✓</i><div><b>Green band: verified.</b> A control-room responder confirmed the report. Faces are pixelated, the place is rounded.</div></li>
+      <li><i class="r">✕</i><div><b>Red band: false.</b> The photo is old, fake or misleading. Please don't forward it as news.</div></li>
+      <li><i class="b">↗</i><div><b>Every card has a link</b> to <span class="url">raahat-kappa.vercel.app/v/…</span> Open it. If it doesn't show the same verdict, the card is fake.</div></li>
+    </ul>
+    <div class="punch">No link, or a different website? It isn't from Raahat.<span class="hi">लिंक नहीं है या कोई और वेबसाइट है? तो यह राहत की पोस्ट नहीं है।</span></div>
+  </div>
+  <div class="foot"><span>raahat-kappa.vercel.app</span><span class="page">2 / 3</span></div>
+</section>
+
+<section class="slide" data-name="02-genuine-3-safety">
+  <div class="band"></div>
+  <div class="head" data-head></div>
+  <div class="body">
+    <p class="eyebrow">Stay safe online · ऑनलाइन सुरक्षित रहें</p>
+    <h2>What Raahat will never do.</h2>
+    <ul class="check-list">
+      <li><i class="r">✕</i><div>Ask for <b>money</b>, donations or payment links.</div></li>
+      <li><i class="r">✕</i><div>Ask for <b>OTPs</b>, passwords or bank details.</div></li>
+      <li><i class="r">✕</i><div>Ask for your <b>name, Aadhaar or phone number</b> to file a report.</div></li>
+      <li><i class="a">!</i><div>Raahat is a <b>citizen project, not a government service</b>. For official updates follow NDMA, IMD and your district administration.</div></li>
+    </ul>
+    <div class="call"><span class="num">112</span><div>Emergency? Call 112.<span>आपात स्थिति में 112 पर कॉल करें।</span></div></div>
+  </div>
+  <div class="foot"><span>raahat-kappa.vercel.app</span><span class="page">3 / 3</span></div>
+</section>
+
+<!-- ═══════════ C. Safety posts ═══════════ -->
+
+<section class="slide" data-name="03-flood-safety">
+  <div class="band"></div>
+  <div class="head" data-head></div>
+  <div class="body">
+    <div class="hazard-head">
+      <div class="ico"><svg width="66" height="66" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 15c2-1.5 4-1.5 6 0s4 1.5 6 0 4-1.5 6 0M2 20c2-1.5 4-1.5 6 0s4 1.5 6 0 4-1.5 6 0M12 3l5 6H7z"/></svg></div>
+      <h2>During a flood<span class="hi">बाढ़ के दौरान</span></h2>
+    </div>
+    <div class="do-dont">
+      <div class="dd"><h3>✓ Do · करें</h3><ul>
+        <li>Move to higher ground or an upper floor at once.</li>
+        <li>Switch off electricity and gas at the main supply, if it is safe.</li>
+        <li>Drink only boiled or chlorinated water.</li>
+        <li>Anyone trapped? Call 112 and send a photo to Raahat.</li>
+      </ul></div>
+      <div class="dd dont"><h3>✕ Don't · न करें</h3><ul>
+        <li>Walk or drive through moving water. Even knee-deep water can sweep away a person or a car.</li>
+        <li>Go near electric poles, fallen wires or transformers.</li>
+        <li>Let children play in or near floodwater.</li>
+      </ul></div>
+    </div>
+    <p class="src">Adapted from NDMA public guidance. Full list: raahat-kappa.vercel.app/safety</p>
+  </div>
+  <div class="foot"><span>raahat-kappa.vercel.app</span><span>Emergency: 112</span></div>
+</section>
+
+<section class="slide" data-name="04-earthquake-safety">
+  <div class="band"></div>
+  <div class="head" data-head></div>
+  <div class="body">
+    <div class="hazard-head">
+      <div class="ico" style="background:var(--amber)"><svg width="66" height="66" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h4l2-5 3 10 3-8 2 3h6"/></svg></div>
+      <h2>In an earthquake<span class="hi">भूकंप के समय</span></h2>
+    </div>
+    <div class="do-dont">
+      <div class="dd"><h3>✓ During · दौरान</h3><ul>
+        <li><b>Drop, cover and hold on:</b> get under a sturdy table and hold it until the shaking stops.</li>
+        <li>Stay away from windows, glass and heavy furniture.</li>
+        <li>Outside? Move to an open area away from buildings, trees and wires.</li>
+      </ul></div>
+      <div class="dd"><h3>✓ After · बाद में</h3><ul>
+        <li>Expect aftershocks.</li>
+        <li>Leave damaged buildings carefully and don't go back in.</li>
+        <li>Report collapsed buildings and trapped people: call 112 and send a photo to Raahat.</li>
+      </ul></div>
+    </div>
+    <p class="src">Adapted from NDMA public guidance. Full list: raahat-kappa.vercel.app/safety</p>
+  </div>
+  <div class="foot"><span>raahat-kappa.vercel.app</span><span>Emergency: 112</span></div>
+</section>
+
+<section class="slide" data-name="05-emergency-numbers">
+  <div class="band"></div>
+  <div class="head" data-head></div>
+  <div class="body">
+    <p class="eyebrow">Save these numbers · ये नंबर सेव करें</p>
+    <h2>Emergency helplines in India</h2>
+    <div class="numbers">
+      <div class="number main"><div class="n">112</div><div>National emergency<span>Police, fire, ambulance · राष्ट्रीय आपातकालीन नंबर</span></div></div>
+      <div class="number"><div class="n">1078</div><div>Disaster helpline (NDMA)<span>आपदा हेल्पलाइन</span></div></div>
+      <div class="number"><div class="n">1070</div><div>State emergency operations centre<span>राज्य आपातकालीन संचालन केंद्र</span></div></div>
+      <div class="number"><div class="n">108</div><div>Ambulance<span>एम्बुलेंस</span></div></div>
+      <div class="number"><div class="n">101</div><div>Fire<span>अग्निशमन</span></div></div>
+    </div>
+  </div>
+  <div class="foot"><span>raahat-kappa.vercel.app</span><span>Share with your family</span></div>
+</section>
+
+<!-- ═══════════ D. Profile picture ═══════════ -->
+
+<section class="slide square pfp" data-name="00-profile-picture">
+  <div data-seal="940"></div>
+</section>
+
+<!-- ═══════════ E. Story ═══════════ -->
+
+<section class="slide story navy" data-name="06-story-check-before-sharing">
+  <div class="band"></div>
+  <div class="body">
+    <div data-seal="260" style="margin-bottom:50px"></div>
+    <p class="eyebrow" style="color:var(--gold);font-size:34px">Saw a viral disaster photo?</p>
+    <h1>Check before you share.<span class="hi">शेयर करने से पहले जाँचें।</span></h1>
+    <div class="rule"></div>
+    <p class="lead" style="font-size:38px">Find out if the control room verified it, or if it's an old photo.</p>
+    <div class="big-url">raahat-kappa.vercel.app/check</div>
+    <div class="or">or forward it on Telegram to</div>
+    <div class="tg">@raahatgov_bot</div>
+  </div>
+  <p class="note" style="font-size:26px">A citizen project · not an official government service · <b>In danger? Call 112</b></p>
+  <div class="foot"><span>राहत · RAAHAT</span><span class="page">FACT CHECK</span></div>
+</section>
+
+<script>
+  // The site's seal, drawn inline (same artwork as src/components/Seal.tsx).
+  let n = 0;
+  function seal(size) {
+    const id = "s" + n++;
+    return `<svg width="${size}" height="${size}" viewBox="0 0 120 120" aria-hidden="true">
+      <defs>
+        <path id="${id}-top" d="M18 60 A42 42 0 0 1 102 60"/>
+        <path id="${id}-bottom" d="M12.5 60 A47.5 47.5 0 0 0 107.5 60"/>
+        <clipPath id="${id}-core"><circle cx="60" cy="60" r="31"/></clipPath>
+      </defs>
+      <circle cx="60" cy="60" r="58" fill="#ff9933"/><circle cx="60" cy="60" r="56" fill="#ffffff"/>
+      <circle cx="60" cy="60" r="54" fill="#138808"/><circle cx="60" cy="60" r="52" fill="#0f2f4f"/>
+      <circle cx="60" cy="60" r="34" fill="none" stroke="#e8b04a" stroke-width="1.5"/>
+      <g fill="#ffffff" font-weight="700" font-family="Mukta, sans-serif" text-anchor="middle">
+        <text font-size="13" letter-spacing="5"><textPath href="#${id}-top" startOffset="50%">RAAHAT</textPath></text>
+        <text font-size="11.5"><textPath href="#${id}-bottom" startOffset="50%">राहत · आपदा सहायता</textPath></text>
+      </g>
+      <g fill="#e8b04a" font-size="10"><text x="10.5" y="64">✦</text><text x="101" y="64">✦</text></g>
+      <g clip-path="url(#${id}-core)">
+        <rect x="20" y="20" width="80" height="80" fill="#f4f7f6"/>
+        <rect x="52" y="30" width="16" height="58" fill="#ffffff" stroke="#0f2f4f" stroke-width="2"/>
+        <rect x="53" y="31" width="14" height="13" fill="#ffffff"/><rect x="53" y="45" width="14" height="13" fill="#c98200"/>
+        <rect x="53" y="59" width="14" height="13" fill="#b3122e"/><rect x="53" y="73" width="14" height="14" fill="#b3122e"/>
+        <path d="M53 44.5h14M53 58.5h14M53 72.5h14" stroke="#0f2f4f" stroke-width="1.5"/>
+        <path d="M20 74 q8 -5 16 0 t16 0 t16 0 t16 0 t16 0 V100 H20z" fill="#2f6f9a" opacity="0.9"/>
+        <path d="M20 82 q8 -5 16 0 t16 0 t16 0 t16 0 t16 0 V100 H20z" fill="#1d4f73"/>
+      </g>
+      <circle cx="60" cy="60" r="31" fill="none" stroke="#0f2f4f" stroke-width="2"/>
+    </svg>`;
+  }
+  document.querySelectorAll("[data-seal]").forEach((el) => (el.innerHTML = seal(+el.dataset.seal)));
+  document.querySelectorAll("[data-head]").forEach((el) => {
+    el.innerHTML = seal(100) +
+      `<div class="wordmark"><div class="hi">राहत</div><div class="en">RAAHAT</div><div class="sub">Citizen Disaster Reporting · नागरिक आपदा रिपोर्टिंग</div></div>
+       <span class="tag">Not official govt</span>`;
+  });
+</script>
+</body>
+</html>

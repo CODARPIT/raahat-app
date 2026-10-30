@@ -28,7 +28,7 @@ const STEPS = [
 ];
 
 const PROMISES = [
-  { title: "Never published", text: "Images are stored privately and shown only through links that expire in minutes." },
+  { title: "Never published", text: "Images are stored privately and shown only through signed, unguessable links. Nothing is ever public." },
   { title: "No sign-up", text: "No name, phone number or email. Your case is a random code and a PIN only you know." },
   { title: "Blurred by default", text: "The fake image is always blurred on screen. You choose if and when to look." },
   { title: "Face data stays on your phone", text: "Face matching runs in your browser; only the scores are saved." },

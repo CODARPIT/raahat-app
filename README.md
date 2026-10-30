@@ -1,176 +1,84 @@
-# Raahat (राहत)
+# Raahat Shield
 
-**Citizen disaster reports, triaged by Cloudinary AI, delivered to responders on any network.**
+**Private help for women being blackmailed with morphed photos: prove the image is fake, build a police-ready evidence pack, and protect future photos.**
 
-**Live demo:** https://raahat-kappa.vercel.app · [report](https://raahat-kappa.vercel.app/report) · [public map](https://raahat-kappa.vercel.app/map) · [check a viral photo](https://raahat-kappa.vercel.app/check) · [control room](https://raahat-kappa.vercel.app/respond)
+**Live demo:** https://raahat-kappa.vercel.app · [prove it's fake](https://raahat-kappa.vercel.app/case) · [protect my photos](https://raahat-kappa.vercel.app/protect) · [get help now](https://raahat-kappa.vercel.app/help)
 
-During Indian floods, control rooms are buried under thousands of forwarded WhatsApp photos with no location,
-no priority and many duplicates. Raahat turns each photo into a ranked, de-duplicated, privacy-safe report on a
-live map, in under a minute, and it loads on a 2G connection.
+A girl's Instagram photos are taken and morphed into obscene images, and the blackmailer demands money. She panics
+and pays, or stays silent out of stigma; she has no way to show the image is fake, and police need evidence in a
+form she doesn't know how to assemble. Cybercrime cases in India rose 31.2% in a year, from 65,893 in 2022 to
+86,420 in 2023 (NCRB), and the National Commission for Women has asked for "deepfake abuse" to be made a specific crime.
 
-Built for **Hacktober HackDays 2026** (SheBuilds Delhi × MLH), Tech for Social Good track.
+Built for **Hacktober HackDays 2026** (SheBuilds Delhi × MLH), Tech for Social Good track. Project documents are in [`docs/`](docs/).
 
-## How one report flows
+## What it does
 
-```
-Phone (camera, on-device downscale, signed)      Telegram bot (photo + "Send my location" button, any order)
-   │                                                 │  POST /api/telegram  (secret token checked)
-   ▼                                                 ▼
-Cloudinary asset  ── tag raahat_report  ◄──── upload (Bot API getFile → file)
-   │
-   ▼  POST /api/reports  (location optional; EXIF GPS used if present)
-Triage pipeline (Next.js route)
-   ├─ Admin API resource(phash)        → perceptual hash for duplicate detection
-   ├─ AI Vision  ai_vision_tagging     → 14-category disaster taxonomy (two batches of ≤10)
-   ├─ AI Vision  ai_vision_general     → people, danger, water depth, authenticity, place names, EN + HI summary (JSON)
-   │     (each call has a timeout; on failure → labelled rule-based triage)
-   │     (input image = e_improve + w_1024 derivative: better at night, fewer tokens)
-   ├─ scoreReport()  matchReport()     → score 0–100, severity, duplicate / corroboration
-   └─ Admin API update(context, tags)  → Cloudinary *is* the database
-   │
-   ▼
-Search API (tags=raahat_report) + in-memory cache  →  Control room + public map
-   ├─ thumbnails  e_pixelate_faces / c_fill,g_auto / f_auto,q_auto:eco|low
-   ├─ detail      e_improve:outdoor, e_sharpen
-   ├─ video       so_2 still for AI,  e_preview:duration_4 clip for responders
-   ├─ alert card  l_text overlays → square alert image, built from a URL
-   └─ fact card   l_text overlays → 1080×1350 Instagram "Verified / False" card linking to /v/<id>
+1. **Prove it's fake.** She privately adds the morphed image and her original photo. Cloudinary finds and crops the
+   face in both; the perceptual hashes of the two face crops show the face was copied from *that* photo, and a proof
+   card shows them side by side.
+2. **Evidence pack.** SHA-256 fingerprints and timestamps of every file, a complaint ready for
+   [cybercrime.gov.in](https://cybercrime.gov.in), takedown requests citing IT Rules 2021 Rule 3(2)(b), and one ZIP.
+3. **Protect future photos.** Watermarked, 1080 px copies with location and camera details removed.
 
-"Is this viral photo real?"  /check page or a photo forwarded to the bot
-   └─ upload(phash) → compare with every report + the known-old library → delete the upload → verdict
-```
+## How it fits the government process
+
+India's NCII procedure (MeitY, October 2025) makes platforms remove morphed intimate images within 24 hours of a
+valid complaint and share hashes to stop re-uploads. Raahat Shield is the step before it: it works while the
+threat is still in private messages, saves the evidence *before* anything is taken down, gives her proof she can
+show family or college, and hands her a complete complaint for 1930 / cybercrime.gov.in.
+
+## Privacy
+
+- Nothing is published. Case files are uploaded as `authenticated` assets and shown through signed URLs.
+- No account: a case is a random ID in an httpOnly cookie. No name, phone or email.
+- The fake image is blurred on every screen until she chooses to look.
+- **Delete my case** removes every asset and purges CDN copies; forgotten cases are deleted after 72 hours.
+- **Quick exit** (button, or Esc twice) leaves for a neutral page.
 
 ## Cloudinary features used
 
-| Feature | Where | Why |
-|---|---|---|
-| Upload Widget (signed, camera source, `maxImageWidth`) | `/report` | Citizens on weak networks; image shrinks on the phone before upload |
-| Signed upload endpoint | `api/sign` | Secret never reaches the browser; only Raahat uploads get signed |
-| AI Vision tagging | `lib/vision.ts` | Our own disaster taxonomy, not generic labels |
-| AI Vision general (JSON prompt) | `lib/vision.ts` | Counts people, judges water depth, flags fakes, writes Hindi summary |
-| Perceptual hash (`phash`) | `lib/reports.ts`, `lib/check.ts` | Merges the same photo forwarded many times; answers "is this viral photo real?" |
-| `e_pixelate_faces`, `e_blur_faces` | `lib/cld-url.ts` | Privacy for everyone in frame, on every public pixel |
-| `g_auto` smart crop | thumbnails, alert card | Crops onto the hazard, not the sky |
-| `f_auto`, `q_auto:eco` / `q_auto:low` | thumbnails, 2G mode | Few-KB queue images for rural control rooms |
-| `e_improve`, `e_sharpen` | detail + AI input | Dark, rainy, shaky photos become readable |
-| Video `so_` frame extraction, `e_preview` | video reports | One AI pipeline for photo and video; short preview instead of full stream |
-| Text overlays (`l_text`) | alert card, fact-check card | Shareable alert and Instagram fact-check cards generated by URL, no image server |
-| `fl_attachment` | fact-check card | One-click download of the Instagram card |
-| Contextual metadata + tags | `lib/reports.ts` | Reports live on the asset; no separate database |
-| Search API | `listReports()` | The dashboard query |
+| Feature | Why |
+|---|---|
+| `type: authenticated` uploads + signed URLs | Case images are never publicly reachable |
+| Upload option `faces: true`, `g_face` | Face boxes in both images |
+| `c_crop,g_face` face-crop assets | Same-size face crops to compare |
+| `phash: true` | Perceptual fingerprints: "the face came from this photo" |
+| `image_metadata: true` | EXIF dates for the timeline |
+| `e_blur` (+ optional Rekognition moderation) | The fake is never shown unblurred by default |
+| Overlays `l_<id>`, `l_text`, `c_pad` | Proof card built from one URL |
+| `l_text` + `fl_tiled`, `c_limit`, `q_auto` | Watermarked, smaller copies of future photos |
+| Archive API `download_zip_url` with `expires_at` | One expiring ZIP of the evidence |
+| `delete_resources_by_tag` + `invalidate` | Delete my case, including CDN copies |
+| Tags + contextual metadata + Search API | The case lives on its assets; no separate database |
 
 ## Run it
 
 ```bash
-cp .env.example .env.local     # fill in your Cloudinary keys and a responder passcode
+cp .env.example .env.local     # fill in your Cloudinary keys
 npm install
 npm run dev                    # http://localhost:3000
-npm test                       # triage, dedupe and parsing tests
+npm test
 ```
 
-1. In the Cloudinary console, enable the **AI Vision** add-on (Settings → Add-ons).
-   Without it, `RAAHAT_AI_MODE=auto` falls back to a transparent rule-based triage of the reporter's note,
-   and every such report is labelled "rule-based" in the control room.
-2. Optional: seed demo data through the real pipeline:
-   `cp scripts/seed.example.json scripts/seed.json`, put photos you have rights to in `seed-images/`, then `npm run seed`.
-3. Deploy: push to GitHub, import into Vercel, add the same env vars.
-4. Optional, Telegram intake (free, no card): in Telegram, message **@BotFather** → `/newbot` → pick a name and a
-   username ending in `bot`. Put the token in `TELEGRAM_BOT_TOKEN`, a long random string in
-   `TELEGRAM_WEBHOOK_SECRET`, the username in `TELEGRAM_BOT_USERNAME`, and `PUBLIC_BASE_URL`, in Vercel and
-   `.env.local`. After deploying, run `npm run telegram:setup` once to point the bot at `/api/telegram`.
-   Citizens send a photo and tap "Send my location" in either order; the pending half is kept in Cloudinary for an hour.
-   Forwarded photos, and photos sent after `/check`, are fact-checked instead of filed.
-5. Optional: set `INSTAGRAM_HANDLE` to show "Follow @handle" next to the fact-check section on the home page.
-   WhatsApp intake through Twilio (`/api/whatsapp`) still works if its `TWILIO_*` variables are set, but Twilio
-   isn't free beyond the trial, so Telegram is the default.
+## Team
 
-Pages and endpoints: `/` overview · `/report` citizen reporting (Hindi/English) · `/map` public map (faces pixelated, locations rounded to ~110 m, notes hidden) · `/respond` control room (passcode) ·
-`/check` "is this viral photo real?" · `/v/<id>` public fact-check page for one report ·
-`/api/health` pre-demo check (Cloudinary reachable, AI mode, AI quota, cache size) · `/api/telegram` bot webhook · `/api/whatsapp` Twilio webhook.
+| Person | Lane |
+|---|---|
+| Arpit | Face matching: similarity score, keypoints, editing indicators |
+| Arpan | Frontend and UX |
+| Garv | Cloudinary, API and deployment |
+| Aviraj | Evidence pack, legal text, docs and pitch |
 
-## Reports without a location
+## Status and honest limits
 
-WhatsApp strips GPS from forwarded photos, and people in a flood often can't find themselves on a map.
-Such reports are **never dropped**: Raahat uses EXIF GPS if the photo still has it, asks Telegram reporters for a
-location (one button), and collects place hints from the note ("near Gandhi School", "मंदिर के पास"), the reporter's
-"describe the place" field and signs the AI reads in the photo. In the control room the "Needs location" filter
-lists them; a coordinator clicks **Pin location** and clicks the map. A Nominatim (OpenStreetMap) guess from the
-place hint is drawn as a dashed suggestion and is never confirmed automatically. Unlocated reports can still be
-merged as duplicates (by perceptual hash) but only corroborate other reports once they have a location.
+- Done: new site, case page (side-by-side, SHA-256 fingerprints, complaint and takedown text), protect page (on device).
+- In progress: Cloudinary uploads, face crops and pHash match, proof card, evidence ZIP, delete and 72 h cleanup.
+- A match proves the face was copied from her photo; it cannot prove who made the morph. Courts may still need a
+  certified forensic report; the pack is a starting point that saves police time.
+- Watermarks make misuse harder and traceable, not impossible.
+- The law sections in the complaint are suggestions; the police decide which apply.
 
-## Scoring
+## Earlier version
 
-`score = category weight + 25% of secondary hazards + 30 if anyone is in danger + 1.5 per person (max 10)
-+ water depth (ankle 2 … chest 22) + 5 if vehicles can't reach + 4 per independent corroborating report (max 5)`,
-×0.3 if there is any reason for human review, capped at 100 (15 if no emergency is seen). Bands: critical ≥ 70, high ≥ 45, moderate ≥ 25.
-
-The weights follow one rule: **threat to life first, then how fast the hazard spreads, then how much it blocks
-access to help** (trapped 40, fire / gas leak / crowd crush 35, collapse / landslide / medical 30, live wire / storm 25,
-flood 20, road blocked / relief 15, waterlogging 10). They are a starting point to tune with a real control room.
-Every point is shown in the control room under **"Why this score"**.
-
-Reasons for review: the AI flags screenshots, memes, drawings, photos of screens or unrelated images, and the
-photo's EXIF date is more than 7 days old ("Photo taken on 3 Jul 2017"). This catches some recycled photos,
-not every old photo. Weights live in `src/lib/triage.ts` and are covered by `tests/triage.test.ts`.
-
-## Languages
-
-The public site is in **12 languages**: English, हिन्दी, বাংলা, অসমীয়া, ଓଡ଼ିଆ, मराठी, ગુજરાતી, ਪੰਜਾਬੀ, தமிழ், తెలుగు,
-ಕನ್ನಡ and മലയാളം. The language comes from the menu in the top bar (remembered in a cookie), else the phone's
-language, else English. Header, menu, footer, home page, reporting and photo checking are fully translated; the
-control room and the long policy pages stay in English and Hindi and say so. Each language is one file in
-`src/locales/` with the same keys as `en.ts`, and `tests/i18n.test.ts` fails if a string or a `{placeholder}`
-is missing. Scripts beyond Latin and Devanagari use the phone's own fonts, so nothing extra downloads on 2G.
-The translations were drafted with AI and need a native speaker's review before real use.
-
-## Fact checks and Instagram
-
-During a disaster, old photos and fake reels spread faster than help. Raahat turns its control room's decisions
-into something the public can check:
-
-- **`/v/<id>`**: a public page for every report. Until a responder acts it shows only "Not verified yet" (no photo).
-  Once a responder marks it verified, dispatched or resolved it shows a green **Verified by the control room** verdict;
-  if rejected, a red **False or misleading** one. Triage marks duplicates "verified" on its own, but that never earns
-  the public badge: only a control-room action in the audit trail does. The page lists what was checked (not a known
-  old photo, photo date, real photo, corroborating reports) without exposing notes or review reasons.
-- **Instagram card**: the same page offers a 1080×1350 card built entirely by Cloudinary URL (faces pixelated, green
-  or red band, what and when, and the `/v/<id>` link). Post it on the Raahat Instagram account; anyone can open the
-  link to confirm the card is genuine. If the link doesn't open a matching page, the card is fake.
-- **`/check`**: anyone uploads a photo or a screenshot of a reel. Cloudinary hashes it, Raahat compares it with every
-  report and the known-old library, deletes the upload and answers: verified, false, still being checked, an old
-  photo, or no record (which is not proof either way). The Telegram bot does the same for forwarded photos.
-
-Posting on Instagram is manual on purpose: a person decides what goes out under Raahat's name. Automatic posting
-through Meta's Graph API is possible later (free, but needs a Facebook Page and a Meta app).
-
-## Demo checklist
-
-1. Open `/api/health`: `ok: true`, the AI mode you expect, AI quota not near zero.
-2. Warm the app: open `/`, `/report`, `/respond` once (first hits on serverless are slow).
-3. Seed data (`npm run seed`) so the map isn't empty.
-4. Rehearse the duplicate merge three times in a row: report a photo, then the same photo again.
-5. If AI Vision is slow or out of quota, set `RAAHAT_AI_MODE=demo`; reports are labelled "rule-based".
-6. Keep a recorded video of the full flow as a backup, and `npm start` locally as a second backup.
-
-## FAQ
-
-- **"Citizens won't open a website mid-flood."** They don't have to: they can report on Telegram. The web page is for volunteers and responders.
-- **"Why Telegram, not WhatsApp?"** WhatsApp's Business API costs money per conversation; Telegram's Bot API is free, has a one-tap location button and works on 2G. The WhatsApp route stays for anyone who can pay for it.
-- **"Forwarded photos have no location."** They're never dropped: we ask for a location, use EXIF GPS if present, extract place names, and the coordinator pins the report on the map.
-- **"Can't someone fake a 'Verified by Raahat' post?"** They can copy the look, not the page: every card links to `/v/<id>` on this site, which shows the real verdict.
-- **"Isn't Cloudinary-as-database fragile?"** Cloudinary is the system of record; an in-memory cache gives read-your-writes and absorbs Search rate limits (one retry, then "data may be a few seconds old"). Production would add Redis or Postgres.
-- **"AI Vision quota or latency?"** Every call has a timeout, with honestly labelled rule-based fallback; the quota is shown in the control room.
-- **"Does it detect old photos?"** It catches screenshots and memes and EXIF dates older than a week; not every old photo, and we say so.
-- **"Why is fire 35 and trapped 40?"** Threat to life first, then spread, then access. Every point is visible under "Why this score" and meant to be tuned with a coordinator.
-
-## Known limits
-
-- Originals are delivered as public (unguessable) URLs; production should upload as `authenticated` and sign delivery URLs.
-- One shared responder passcode; production needs per-responder accounts and an audit log.
-- The read-your-writes cache lives in memory, so it is only consistent within one server instance. On Vercel,
-  instances don't share memory; a production version would use Redis. (The bots' photo/location pairing is stored
-  in Cloudinary, so it works across instances.)
-- A Telegram or WhatsApp photo is filed once its location arrives; a photo whose location never comes stays pending for an hour.
-- `/check` matches the same photo (resized, recompressed, lightly cropped). A screenshot with heavy cropping, stickers
-  or text on top may not match, and a video is checked by one frame.
-- AI output can be wrong. Raahat ranks, it never discards: every report stays visible to a human.
+Raahat started as a disaster-photo triage portal (citizen reports ranked by Cloudinary AI for control rooms).
+That code is still in the repo (`/report`, `/map`, `/respond`, `/check`, `src/lib/triage.ts`) but is no longer linked from the site.
