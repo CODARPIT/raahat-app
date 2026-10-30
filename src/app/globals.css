@@ -829,3 +829,51 @@ body > header, body > nav, body > footer, body > .page, body > .access-bar, body
 @media (max-width: 760px) {
   .dispatch-map { position: static; height: 380px; flex-basis: 100%; }
 }
+
+/* Dispatch board: motion */
+.dispatch-counts > div { flex-basis: 150px; }
+.dispatch-livebar { display: flex; align-items: center; gap: 8px; margin: -6px 0 14px; font-size: 0.9375rem; color: var(--ink-soft); }
+.dispatch-modes button { display: inline-flex; align-items: center; gap: 8px; }
+.live-pulse { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; background: #1f8a4c; box-shadow: 0 0 0 0 rgb(31 138 76 / 0.6); animation: live-pulse 1.6s infinite; }
+.dispatch-livebar.is-off .live-pulse { background: #b3122e; animation: none; }
+@keyframes live-pulse { 70% { box-shadow: 0 0 0 9px rgb(31 138 76 / 0); } 100% { box-shadow: 0 0 0 0 rgb(31 138 76 / 0); } }
+
+.dispatch-step-bar { height: 4px; border-radius: 2px; background: var(--line); margin-top: 14px; overflow: hidden; }
+.dispatch-step-bar span { display: block; height: 100%; background: var(--saffron); transition: width 0.6s ease; }
+
+.dispatch-side { flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.dispatch-side .dispatch-cards { flex: none; }
+.dispatch-feed { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+.dispatch-feed h2 { display: flex; align-items: center; gap: 8px; font-size: 1rem; margin: 0 0 6px; }
+.dispatch-feed ol { list-style: none; margin: 0; padding: 0; max-height: 172px; overflow-y: auto; }
+.dispatch-feed li { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; border-top: 1px solid var(--line); font-size: 0.875rem; animation: feed-in 0.5s ease-out; }
+.dispatch-feed time { flex: none; color: var(--ink-soft); }
+.feed-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; background: #1f8a4c; }
+.feed-dot[data-sev="critical"] { background: #b3122e; }
+.feed-dot[data-sev="high"] { background: #b86e00; }
+.feed-dot[data-sev="moderate"] { background: #2c6e6a; }
+.feed-dot[data-sev="low"] { background: #5f6f6b; }
+@keyframes feed-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+.dispatch-card { animation: card-in 0.45s ease-out; }
+@keyframes card-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.dispatch-card-help > span { flex: 1; min-width: 0; }
+.dispatch-card-help.is-there .dispatch-unit-icon { color: #1f8a4c; }
+.dispatch-progress { display: block; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 6px; }
+.dispatch-progress span { display: block; height: 100%; background: var(--saffron); transition: width 0.25s linear; }
+.dispatch-card-help.is-there .dispatch-progress span { background: #1f8a4c; }
+.tag-onscene { background: #d9f2e3; color: #145c32; }
+
+.dmap-route.is-moving { stroke-dasharray: 12 10; animation: dmap-flow 0.9s linear infinite; }
+@keyframes dmap-flow { to { stroke-dashoffset: -22; } }
+.dmap-num[data-sev="critical"]::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 3px solid #b3122e; animation: dmap-pulse 1.8s ease-out infinite; pointer-events: none; }
+@keyframes dmap-pulse { from { transform: scale(1); opacity: 0.9; } to { transform: scale(2.2); opacity: 0; } }
+.dmap-vehicle { position: absolute; transform: translate(-50%, -50%); width: 30px; height: 30px; border-radius: 50%; background: #fff; border: 3px solid; display: grid; place-items: center; color: #13233a; box-shadow: 0 2px 8px #0006; }
+.dmap-vehicle svg { width: 17px; height: 17px; }
+.dmap-vehicle.is-parked { width: 24px; height: 24px; margin-left: 22px; margin-top: -20px; }
+.dmap-vehicle.is-parked svg { width: 14px; height: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .live-pulse, .dmap-route.is-moving, .dmap-num::after, .dispatch-feed li, .dispatch-card { animation: none !important; }
+  .dispatch-progress span, .dispatch-step-bar span { transition: none; }
+}

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { assignAll, unitFor, type DispatchReport } from "../src/lib/dispatch";
+import { sentAt } from "../src/lib/dispatch-rows";
 import type { Severity, Status } from "../src/lib/types";
 
 // Next to the ITO demo centre. Nearest after ITO: Kashmere Gate (~4.5 km),
@@ -72,4 +73,14 @@ test("the unit matches the hazard", () => {
   assert.equal(unitFor({ primaryCategory: "trapped_or_injured", categories: ["trapped_or_injured"] }), "ambulance");
   assert.equal(unitFor({ primaryCategory: "trapped_or_injured", categories: ["trapped_or_injured", "flood"] }), "rescue");
   assert.equal(unitFor({ primaryCategory: "structural_collapse", categories: ["structural_collapse"] }), "rescue");
+});
+
+test("help is sent at once for critical, otherwise when it was verified", () => {
+  const base = { createdAt: "2026-10-31T10:00:00Z", updatedAt: "2026-10-31T10:30:00Z" };
+  assert.equal(sentAt({ ...base, severity: "critical", history: [] }), base.createdAt);
+  assert.equal(
+    sentAt({ ...base, severity: "moderate", history: [{ action: "filed", at: base.createdAt }, { action: "verified", at: "2026-10-31T10:05:00Z" }] }),
+    "2026-10-31T10:05:00Z",
+  );
+  assert.equal(sentAt({ ...base, severity: "low", history: [] }), base.updatedAt);
 });
