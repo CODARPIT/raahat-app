@@ -1,273 +1,307 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
-import { assessImage, newImageReview, parseImageAssessment, waitForImageReview } from "../src/lib/image-review";
-import { currentImageReview, decodeImageReview, imageNeedsReview } from "../src/lib/image-review-state";
-import { createReportReceipt, verifyReportReceipt } from "../src/lib/report-receipt";
-import { factCheck } from "../src/lib/verify";
-import { buildIncidents } from "../src/lib/incidents";
 import { cloudinary } from "../src/lib/cloudinary";
-import { acceptImageEvidence, completeImageReview, getReport, setStatus, triage } from "../src/lib/reports";
 import { REPORT_TAG } from "../src/lib/constants";
-import type { ImageReview } from "../src/lib/types";
+import {
+  assessImage,
+  effectiveReview,
+  initialReview,
+  MAX_REVIEW_BYTES,
+  parseAssessment,
+  REVIEW_DELAY_MS,
+  REVIEW_GRACE_MS,
+} from "../src/lib/image-review";
+import { buildIncidents } from "../src/lib/incidents";
+import { issueReceipt, readReceipt } from "../src/lib/receipt";
+import { acceptImageEvidence, listReports, runImageReview, setStatus, triage } from "../src/lib/reports";
+import { factCheck } from "../src/lib/verify";
 
-const review: ImageReview = {
-  status: "pending", requestedAt: "2026-10-30T10:00:00.000Z", dueAt: "2026-10-30T10:00:10.000Z",
-  checkedAt: null, model: "gemini-2.5-flash", reason: "",
-};
-const image = { publicId: "raahat/reports/image-review-test", resourceType: "image" as const };
+const KEY = "test-gemini-key-must-not-leak";
+process.env.RAAHAT_RECEIPT_SECRET = "receipt-test-secret";
 
-function setEnv(name: string, value?: string) {
-  const previous = process.env[name];
-  if (value === undefined) delete process.env[name]; else process.env[name] = value;
-  return () => { if (previous === undefined) delete process.env[name]; else process.env[name] = previous; };
+function withKey<T>(fn: () => T): T {
+  const saved = process.env.GEMINI_API_KEY;
+  process.env.GEMINI_API_KEY = KEY;
+  try {
+    return fn();
+  } finally {
+    if (saved === undefined) delete process.env.GEMINI_API_KEY;
+    else process.env.GEMINI_API_KEY = saved;
+  }
 }
-const modelResponse = (assessment: string) => Response.json({ candidates: [{ finishReason: "STOP", content: {
-  parts: [{ text: JSON.stringify({ assessment, reason: "Some repeated structures appear visually inconsistent." }) }],
-} }] });
 
-test("review starts ten seconds after rating and never pretends a missing key or video was checked", () => {
-  const restore = setEnv("GEMINI_API_KEY", "test-only-not-a-real-key");
-  try {
-    const pending = newImageReview("image", true, 1000);
-    assert.equal(pending.status, "pending");
-    assert.equal(Date.parse(pending.dueAt!) - Date.parse(pending.requestedAt), 10_000);
-    assert.equal(newImageReview("video", true).status, "not_checked");
-    assert.equal(newImageReview("image", false).status, "not_checked");
-    delete process.env.GEMINI_API_KEY;
-    assert.equal(newImageReview("image", true).status, "unavailable");
-  } finally { restore(); }
+const answer = (verdict: string, concerns: string[] = [], finishReason = "STOP") => ({
+  candidates: [{ finishReason, content: { parts: [{ text: JSON.stringify({ verdict, concerns }) }] } }],
 });
 
-test("visual assessment parser has no genuine/fake or watermark verdict", () => {
-  assert.equal(parseImageAssessment({ assessment: "genuine", reason: "real" }).status, "inconclusive");
-  assert.equal(parseImageAssessment({ assessment: "fake", reason: "fake" }).status, "inconclusive");
-  assert.equal(parseImageAssessment({ assessment: "no_clear_signs" }).status, "inconclusive");
-  assert.equal(parseImageAssessment({ assessment: "suspected_synthetic", reason: "Repeated distorted objects" }).status, "suspected_synthetic");
-  assert.equal(parseImageAssessment(null).status, "inconclusive");
+// ── Scheduling and states ────────────────────────────────────────────────────
+
+test("images are scheduled 10 s after filing; videos, seeds and keyless setups are not", () => {
+  const now = new Date("2026-10-31T10:00:00Z");
+  withKey(() => {
+    const r = initialReview("image", true, now);
+    assert.equal(r.state, "pending");
+    assert.equal(Date.parse(r.dueAt!) - now.getTime(), REVIEW_DELAY_MS);
+    assert.equal(r.votesAdded, false, "a pending image can't vote yet");
+    assert.equal(initialReview("video", true, now).state, "not_assessed");
+    assert.equal(initialReview("image", false, now).state, "not_assessed", "seed scripts don't opt in");
+  });
+  const saved = process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  assert.equal(initialReview("image", true, now).state, "unavailable");
+  if (saved !== undefined) process.env.GEMINI_API_KEY = saved;
 });
 
-test("server delay waits until due time and doesn't restart ten seconds for a late task", async () => {
-  const delays: number[] = [];
-  await waitForImageReview(review, { now: () => Date.parse(review.requestedAt) + 2500, sleep: async (ms) => { delays.push(ms); } });
-  await waitForImageReview(review, { now: () => Date.parse(review.dueAt!) + 1, sleep: async (ms) => { delays.push(ms); } });
-  assert.deepEqual(delays, [7500]);
+test("an overdue pending check reads as unavailable, never as success", () => {
+  const r = withKey(() => initialReview("image", true, new Date("2026-10-31T10:00:00Z")));
+  const due = Date.parse(r.dueAt!);
+  assert.equal(effectiveReview(r, new Date(due + REVIEW_GRACE_MS)).state, "pending");
+  assert.equal(effectiveReview(r, new Date(due + REVIEW_GRACE_MS + 1)).state, "unavailable");
 });
 
-test("Gemini receives the unenhanced upload, strict schema and server header, never an API key in a URL", async () => {
-  const restore = setEnv("GEMINI_API_KEY", "test-only-not-a-real-key");
-  const calls: { url: string; options?: RequestInit }[] = [];
-  try {
-    const result = await assessImage(image, review, { fetchImpl: async (url, options) => {
-      calls.push({ url: String(url), options });
-      if (calls.length === 1) return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/jpeg" } });
-      return modelResponse("no_clear_signs");
-    } });
-    assert.equal(result.status, "no_clear_signs");
-    assert.ok(result.checkedAt);
-    assert.ok(!calls[0].url.includes("e_improve"));
-    assert.ok(!calls[1].url.includes("test-only"));
-    assert.equal(new Headers(calls[1].options?.headers).get("x-goog-api-key"), "test-only-not-a-real-key");
-    const request = JSON.parse(String(calls[1].options?.body));
-    assert.equal(request.contents[0].parts[1].inlineData.data, "AQID");
-    assert.equal(request.generationConfig.responseMimeType, "application/json");
-    assert.match(request.contents[0].parts[0].text, /NOT SynthID/);
-  } finally { restore(); }
+// ── Conservative parsing ─────────────────────────────────────────────────────
+
+test("parsing is conservative: only a well-formed suspicion with concrete concerns is 'suspected'", () => {
+  assert.deepEqual(parseAssessment(answer("no_clear_signs", ["ignored"])), { state: "clear", concerns: [] });
+  assert.deepEqual(parseAssessment(answer("suspected_synthetic", ["  Melted text on the shop sign, top left "])), {
+    state: "suspected",
+    concerns: ["Melted text on the shop sign, top left"],
+  });
+  assert.equal(parseAssessment(answer("suspected_synthetic", [])).state, "inconclusive", "no concrete concern, no suspicion");
+  assert.equal(parseAssessment(answer("suspected_synthetic", ["", 3 as unknown as string])).state, "inconclusive");
+  assert.equal(parseAssessment(answer("inconclusive")).state, "inconclusive");
+  assert.equal(parseAssessment(answer("definitely_fake", ["x"])).state, "unavailable");
+  assert.equal(parseAssessment(answer("suspected_synthetic", ["x"], "MAX_TOKENS")).state, "unavailable", "truncated");
+  assert.equal(parseAssessment(answer("suspected_synthetic", ["x"], "SAFETY")).state, "unavailable", "blocked answer");
+  assert.equal(parseAssessment({ promptFeedback: { blockReason: "SAFETY" } }).state, "unavailable", "blocked prompt");
+  assert.equal(parseAssessment({ candidates: [{ finishReason: "STOP", content: { parts: [{ text: "{not json" }] } }] }).state, "unavailable");
+  assert.equal(parseAssessment(null).state, "unavailable");
+  const withThoughts = {
+    candidates: [{ finishReason: "STOP", content: { parts: [{ text: "thinking…", thought: true }, { text: '{"verdict":"no_clear_signs","concerns":[]}' }] } }],
+  };
+  assert.equal(parseAssessment(withThoughts).state, "clear", "thought parts are skipped");
+  const many = parseAssessment(answer("suspected_synthetic", Array.from({ length: 9 }, (_, i) => `concern ${i} ${"x".repeat(300)}`)));
+  assert.equal(many.concerns.length, 5);
+  assert.ok(many.concerns.every((c) => c.length <= 200));
 });
 
-test("API errors, oversized images, unexpected formats and missing keys stay unavailable", async () => {
-  const restore = setEnv("GEMINI_API_KEY", "test-only-not-a-real-key");
-  try {
-    const fixtures = [
-      async () => { throw new Error("provider error containing a credential must not be shown"); },
-      async () => new Response("x", { status: 429 }),
-      async () => new Response("x", { headers: { "content-type": "text/html" } }),
-      async () => new Response("x", { headers: { "content-type": "image/jpeg", "content-length": "9000000" } }),
-    ];
-    for (const fetchImpl of fixtures) {
-      const result = await assessImage(image, review, { fetchImpl });
-      assert.equal(result.status, "unavailable");
-      assert.ok(!result.reason.includes("credential"));
-      assert.equal(imageNeedsReview(result), false);
+// ── Provider call ────────────────────────────────────────────────────────────
+
+type Call = { url: string; init?: RequestInit };
+
+function provider(image: Response | (() => Response), reply: () => Promise<Response> | Response) {
+  const calls: Call[] = [];
+  const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    calls.push({ url, init });
+    if (url.startsWith("https://generativelanguage.googleapis.com/")) return reply();
+    return typeof image === "function" ? image() : image.clone();
+  }) as typeof fetch;
+  return { calls, fetchImpl };
+}
+
+const jpeg = () => new Response(new Uint8Array([0xff, 0xd8, 0xff, 1, 2, 3]), { headers: { "content-type": "image/jpeg" } });
+
+test("the stored image goes to Gemini inline, with the key in a header and never in the URL", async () => {
+  const { calls, fetchImpl } = provider(jpeg, () => Response.json(answer("no_clear_signs")));
+  const out = await assessImage("https://res.cloudinary.com/demo/image/upload/raahat/reports/x", { apiKey: KEY, model: "gemini-test", fetchImpl });
+  assert.deepEqual(out, { state: "clear", concerns: [], model: "gemini-test" });
+  assert.equal(calls[0].url, "https://res.cloudinary.com/demo/image/upload/raahat/reports/x");
+  const g = calls[1];
+  assert.ok(!g.url.includes(KEY), "key is not in the URL");
+  assert.equal((g.init!.headers as Record<string, string>)["x-goog-api-key"], KEY);
+  const body = JSON.parse(String(g.init!.body));
+  const inline = body.contents[0].parts[1].inline_data;
+  assert.equal(inline.mime_type, "image/jpeg");
+  assert.equal(Buffer.from(inline.data, "base64").length, 6);
+});
+
+test("unsupported, oversized, failed, slow or keyless requests are 'unavailable', with no paid retry", async () => {
+  const gif = provider(new Response(new Uint8Array([1]), { headers: { "content-type": "image/gif" } }), () => Response.json(answer("no_clear_signs")));
+  assert.equal((await assessImage("https://img/x", { apiKey: KEY, fetchImpl: gif.fetchImpl })).state, "unavailable");
+  assert.equal(gif.calls.length, 1, "Gemini is not called for an unsupported format");
+
+  const big = provider(
+    new Response(new Uint8Array([1]), { headers: { "content-type": "image/png", "content-length": String(MAX_REVIEW_BYTES + 1) } }),
+    () => Response.json(answer("no_clear_signs")),
+  );
+  assert.equal((await assessImage("https://img/x", { apiKey: KEY, fetchImpl: big.fetchImpl })).state, "unavailable");
+  assert.equal(big.calls.length, 1, "Gemini is not called for an image over 8 MiB");
+
+  const failing = provider(jpeg, () => new Response("busy", { status: 503 }));
+  assert.equal((await assessImage("https://img/x", { apiKey: KEY, fetchImpl: failing.fetchImpl })).state, "unavailable");
+  assert.equal(failing.calls.length, 2, "one attempt, no retry");
+
+  const hanging = provider(jpeg, () => new Promise<Response>(() => undefined));
+  const slow = (async (input: string | URL | Request, init?: RequestInit) => {
+    if (String(input).includes("generativelanguage")) {
+      return new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))));
     }
-    delete process.env.GEMINI_API_KEY;
-    assert.equal((await assessImage(image, review, { fetchImpl: async () => { assert.fail("must not call Google without a key"); } })).status, "unavailable");
-  } finally { restore(); }
+    return hanging.fetchImpl(input, init);
+  }) as typeof fetch;
+  assert.equal((await assessImage("https://img/x", { apiKey: KEY, fetchImpl: slow, timeoutMs: 30 })).state, "unavailable");
+
+  const keyless = provider(jpeg, () => Response.json(answer("no_clear_signs")));
+  const saved = process.env.GEMINI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
+  assert.equal((await assessImage("https://img/x", { fetchImpl: keyless.fetchImpl })).state, "unavailable");
+  if (saved !== undefined) process.env.GEMINI_API_KEY = saved;
+  assert.equal(keyless.calls.length, 0);
 });
 
-test("a blocked or truncated Gemini response is inconclusive rather than a negative judgment", async () => {
-  const restore = setEnv("GEMINI_API_KEY", "test-only-not-a-real-key");
-  try {
-    let calls = 0;
-    const result = await assessImage(image, review, { fetchImpl: async () => ++calls === 1
-      ? new Response("x", { headers: { "content-type": "image/png" } })
-      : Response.json({ candidates: [{ finishReason: "MAX_TOKENS", content: { parts: [{ text: '{"assessment":"suspected_synthetic"}' }] } }] }) });
-    assert.equal(result.status, "inconclusive");
-  } finally { restore(); }
+// ── Receipts ─────────────────────────────────────────────────────────────────
+
+test("filing receipts are signed, bound to one report and expire after an hour", () => {
+  const now = Date.parse("2026-10-31T10:00:00Z");
+  const r = issueReceipt("raahat/reports/abc", "image", now)!;
+  assert.deepEqual(readReceipt(r, now + 59 * 60_000), { publicId: "raahat/reports/abc", resourceType: "image" });
+  assert.equal(readReceipt(r, now + 61 * 60_000), null, "expired");
+  const [body, mac] = r.split(".");
+  const forged = Buffer.from(JSON.stringify({ p: "raahat/reports/other", t: "image", e: 9e9 })).toString("base64url");
+  assert.equal(readReceipt(`${forged}.${mac}`, now), null, "can't point a receipt at another report");
+  assert.equal(readReceipt(`${body}.${mac}x`, now), null);
+  assert.equal(readReceipt("", now), null);
 });
 
-test("a stalled provider request times out without a synthetic-image accusation", async () => {
-  const restore = setEnv("GEMINI_API_KEY", "test-only-not-a-real-key");
-  try {
-    let calls = 0;
-    const result = await assessImage(image, review, { timeoutMs: 5, fetchImpl: async (_url, options) => {
-      if (++calls === 1) return new Response("x", { headers: { "content-type": "image/jpeg" } });
-      return new Promise<Response>((_resolve, reject) => {
-        options?.signal?.addEventListener("abort", () => reject(new Error("Timed out")), { once: true });
-      });
-    } });
-    assert.equal(result.status, "unavailable");
-    assert.equal(imageNeedsReview(result), false);
-  } finally { restore(); }
-});
+// ── The pipeline, with Cloudinary and Gemini mocked ─────────────────────────
 
-test("stored assessment round-trips, interrupted jobs stop spinning and an override lifts only the model flag", () => {
-  assert.deepEqual(decodeImageReview(JSON.stringify(review)), review);
-  assert.equal(decodeImageReview('{"status":"genuine"}'), undefined);
-  assert.equal(currentImageReview(review, Date.parse(review.dueAt!) + 120_001)?.status, "unavailable");
-  assert.equal(imageNeedsReview({ ...review, status: "suspected_synthetic" }), true);
-  assert.equal(imageNeedsReview({ ...review, status: "suspected_synthetic", acceptedAt: review.requestedAt }), false);
-});
+interface Asset {
+  public_id: string;
+  resource_type: "image" | "video";
+  created_at: string;
+  bytes: number;
+  tags: string[];
+  phash?: string;
+  context?: Record<string, string>;
+}
+const north = (m: number) => 28.6 + (m / 6_371_000) * (180 / Math.PI);
 
-test("filing receipts reject tampering, wrong secrets and expiry", () => {
-  const restore = setEnv("CLOUDINARY_API_SECRET", "test-only-receipt-secret");
-  try {
-    const token = createReportReceipt(image, 1000)!;
-    assert.deepEqual(verifyReportReceipt(token, 2000), image);
-    assert.equal(verifyReportReceipt(token, 3_601_000), null);
-    assert.equal(verifyReportReceipt(token + "x", 2000), null);
-    const parts = token.split(".");
-    assert.equal(verifyReportReceipt(Buffer.from('{"id":"another-report","type":"image","exp":9999999}').toString("base64url") + "." + parts[1], 2000), null);
-    process.env.CLOUDINARY_API_SECRET = "different-test-secret";
-    assert.equal(verifyReportReceipt(token, 2000), null);
-    delete process.env.CLOUDINARY_API_SECRET;
-    assert.equal(createReportReceipt(image), null);
-  } finally { restore(); }
-});
-
-test("a model assessment never creates a public verified/false badge and can request renewed human review", () => {
-  const report = { status: "new" as const, history: [{ action: "filed" as const, at: review.requestedAt }], reviewReasons: [], corroborations: 0 };
-  assert.equal(factCheck({ ...report, imageReview: { ...review, status: "no_clear_signs" } }).verdict, "pending");
-  const suspected = { ...review, status: "suspected_synthetic" as const };
-  assert.equal(factCheck({ ...report, imageReview: suspected }).verdict, "pending");
-  const humanVerified = { ...report, status: "verified" as const, history: [...report.history, { action: "verified" as const, at: review.requestedAt }] };
-  assert.equal(factCheck({ ...humanVerified, imageReview: suspected }).verdict, "pending");
-  assert.equal(factCheck({ ...humanVerified, imageReview: { ...suspected, acceptedAt: review.requestedAt } }).verdict, "verified");
-});
-
-test("delayed repository review preserves emergency rating and intervening responder actions; acceptance restores circles", async () => {
-  const restoreKey = setEnv("GEMINI_API_KEY", "test-only-not-a-real-key");
-  const restoreMode = setEnv("RAAHAT_AI_MODE", "demo");
-  const id = "raahat/reports/delayed-review-pipeline";
-  const asset = { public_id: id, resource_type: "image" as const, created_at: new Date(Date.now() - 60_000).toISOString(),
-    bytes: 3, tags: [REPORT_TAG], context: { score: "80", primary: "flood", cats: "flood", lat: "28.6", lng: "77.2",
-      danger: "1", people: "8", depth: "chest_or_more", corrob: "0", status: "new", summary: "People in flood", ai: "demo", img_review: JSON.stringify(review) } as Record<string, string> };
-  let modelCalls = 0;
-  mock.method(cloudinary.api, "resource", async () => structuredClone(asset));
-  mock.method(cloudinary.api, "update", async (_id: string, options: { context: Record<string, string> }) => { asset.context = options.context; return {}; });
-  mock.method(cloudinary.search, "expression", () => {
-    const chain = { with_field: () => chain, sort_by: () => chain, max_results: () => chain, execute: async () => ({ resources: [structuredClone(asset)] }) };
-    return chain;
+test("the image check never changes the hazard rating, respects responders and gates incidents until accepted", async () => {
+  const saved = { mode: process.env.RAAHAT_AI_MODE, key: process.env.GEMINI_API_KEY };
+  process.env.RAAHAT_AI_MODE = "demo";
+  process.env.GEMINI_API_KEY = KEY;
+  const assets = new Map<string, Asset>();
+  const written: string[] = [];
+  const start = Date.now() - 3_600_000;
+  const anchor: Asset = {
+    public_id: "raahat/reports/ir-anchor", resource_type: "image", created_at: new Date(start).toISOString(), bytes: 1000,
+    tags: [REPORT_TAG], phash: "aaaaaaaaaaaaaaaa", context: {
+      score: "50", phash: "aaaaaaaaaaaaaaaa", primary: "flood", cats: "flood", lat: "28.6", lng: "77.2", locsrc: "gps",
+      danger: "1", people: "0", depth: "none", corrob: "0", status: "new", summary: "Flood with people in danger", ai: "demo",
+    },
+  };
+  // Filed long ago with a job that never ran: it must read as unavailable.
+  const stale: Asset = {
+    public_id: "raahat/reports/ir-stale", resource_type: "image", created_at: new Date(start).toISOString(), bytes: 1000,
+    tags: [REPORT_TAG], phash: "0f0f0f0f0f0f0f0f", context: {
+      score: "20", phash: "0f0f0f0f0f0f0f0f", primary: "waterlogging", cats: "waterlogging", status: "new", ai: "demo",
+      ir: "pending", ir_due: new Date(Date.now() - REVIEW_GRACE_MS - 60_000).toISOString(), ir_votes: "0",
+    },
+  };
+  assets.set(anchor.public_id, anchor);
+  assets.set(stale.public_id, stale);
+  mock.method(cloudinary.api, "resource", async (id: string) => {
+    const a = assets.get(id);
+    if (!a) throw new Error("Not found");
+    return structuredClone(a);
   });
-  mock.method(globalThis, "fetch", async (url: string | URL | Request) => {
-    if (String(url).startsWith("https://generativelanguage.googleapis.com/")) {
-      modelCalls++;
-      // Simulate a responder dispatching a team while the model is running.
-      await setStatus(id, "image", "dispatched");
-      return modelResponse("suspected_synthetic");
-    }
-    return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/jpeg" } });
-  });
-  try {
-    const before = await getReport(id, "image");
-    const initialRadius = buildIncidents([before])[0].radiusM;
-    await completeImageReview(id, "image", review.requestedAt);
-    const assessed = await getReport(id, "image");
-    assert.equal(assessed.status, "dispatched");
-    assert.equal(assessed.score, before.score, "a Gemini suspicion must not lower the emergency rating");
-    assert.equal(assessed.severity, before.severity);
-    assert.equal(assessed.imageReview?.status, "suspected_synthetic");
-    assert.equal(assessed.needsReview, true);
-    assert.deepEqual(buildIncidents([assessed]), []);
-    await completeImageReview(id, "image", review.requestedAt);
-    assert.equal(modelCalls, 1, "a completed assessment must not be charged again");
-    const accepted = await acceptImageEvidence(id, "image");
-    assert.equal(accepted.needsReview, false);
-    assert.equal(accepted.status, "dispatched");
-    assert.equal(buildIncidents([accepted])[0].radiusM, initialRadius);
-    assert.equal(accepted.history.at(-1)?.action, "image_accepted");
-    const historyCount = accepted.history.length;
-    assert.equal((await acceptImageEvidence(id, "image")).history.length, historyCount);
-
-    // Other review flags survive a responder accepting this particular assessment.
-    asset.context.reasons = "Matches an older photo: a previous flood";
-    asset.context.img_review = JSON.stringify({ ...review, status: "suspected_synthetic" });
-    asset.context.upd = new Date(Date.now() + 1000).toISOString();
-    assert.equal((await acceptImageEvidence(id, "image")).needsReview, true);
-  } finally { mock.restoreAll(); restoreKey(); restoreMode(); }
-});
-
-test("filing schedules one background task and pending evidence cannot boost an existing report", async () => {
-  const restoreKey = setEnv("GEMINI_API_KEY", "test-only-not-a-real-key");
-  const restoreMode = setEnv("RAAHAT_AI_MODE", "demo");
-  const id = "raahat/reports/pending-review-filing";
-  let stored: Record<string, string> | undefined;
-  const asset = { public_id: id, resource_type: "image", created_at: new Date().toISOString(), bytes: 3, tags: [REPORT_TAG] };
-  const anchor = { ...asset, public_id: "raahat/reports/pending-test-anchor", context: {
-    score: "50", primary: "trapped_or_injured", cats: "trapped_or_injured,flood", lat: "28.6", lng: "77.2", danger: "1", depth: "none", status: "new", ai: "demo",
-  } };
-  const testNow = Date.now() + 11_000;
-  mock.method(Date, "now", () => testNow); // expire the shared Search cache
-  mock.method(cloudinary.api, "resource", async () => asset);
-  mock.method(cloudinary.api, "update", async (publicId: string, options: { context: Record<string, string> }) => {
-    assert.equal(publicId, id, "pending evidence must not update another report's corroborations"); stored = options.context; return {};
-  });
-  mock.method(cloudinary.search, "expression", (query: string) => {
-    const chain = { with_field: () => chain, sort_by: () => chain, max_results: () => chain, execute: async () => ({ resources: query.includes("known_old") ? [] : [anchor] }) }; return chain;
-  });
-  mock.method(globalThis, "fetch", async (url: string | URL | Request) => {
-    assert.ok(!String(url).startsWith("https://generativelanguage.googleapis.com/"), "filing must not wait for Gemini");
-    return new Response(new Uint8Array([1]));
-  });
-  try {
-    const tasks: (() => Promise<void>)[] = [];
-    const report = await triage({ publicId: id, resourceType: "image", lat: 28.6, lng: 77.2, locationSource: "gps",
-      note: "8 people trapped in chest deep flood", lang: "en", deferImageReview: (task) => tasks.push(task) });
-    assert.equal(report.imageReview?.status, "pending");
-    assert.equal(report.corroborations, 0);
-    assert.equal(tasks.length, 1);
-    assert.equal(JSON.parse(stored!.img_review).status, "pending");
-  } finally { mock.restoreAll(); restoreKey(); restoreMode(); }
-});
-
-test("no-clear-signs completion adds compatible independent corroboration once", async () => {
-  const restore = setEnv("GEMINI_API_KEY", "test-only-not-a-real-key");
-  const now = Date.now();
-  mock.method(Date, "now", () => now + 22_000);
-  const anchorId = "raahat/reports/gemini-corroboration-anchor";
-  const witnessId = "raahat/reports/gemini-corroboration-witness";
-  const asset = (id: string, pending: boolean) => ({ public_id: id, resource_type: "image", tags: [REPORT_TAG], bytes: 3,
-    created_at: new Date(now - (pending ? 0 : 60_000)).toISOString(), context: {
-      score: "50", primary: "flood", cats: "flood", lat: "28.6", lng: "77.2", danger: "1", people: "0", depth: "none", status: "new", corrob: "0", ai: "demo",
-      ...(pending ? { img_review: JSON.stringify(review) } : {}),
-    } as Record<string, string> });
-  const assets = new Map([[anchorId, asset(anchorId, false)], [witnessId, asset(witnessId, true)]]);
-  let anchorWrites = 0;
-  mock.method(cloudinary.api, "resource", async (id: string) => structuredClone(assets.get(id)));
-  mock.method(cloudinary.api, "update", async (id: string, options: { context: Record<string, string> }) => {
-    const original = assets.get(id)!; assets.set(id, { ...original, context: options.context });
-    if (id === anchorId) anchorWrites++;
+  mock.method(cloudinary.api, "update", async (id: string, o: { context: Record<string, string>; tags: string }) => {
+    const a = assets.get(id);
+    assert.ok(a);
+    written.push(JSON.stringify(o));
+    assets.set(id, { ...a, context: o.context, tags: o.tags.split(",") });
     return {};
   });
-  mock.method(cloudinary.search, "expression", () => {
-    const chain = { with_field: () => chain, sort_by: () => chain, max_results: () => chain, execute: async () => ({ resources: [...assets.values()] }) }; return chain;
+  mock.method(cloudinary.search, "expression", (q: string) => {
+    const chain = {
+      with_field: () => chain, sort_by: () => chain, max_results: () => chain,
+      execute: async () => ({ resources: q.includes("known_old") ? [] : [...assets.values()].filter((a) => a.context?.score).map((a) => structuredClone(a)) }),
+    };
+    return chain;
   });
-  mock.method(globalThis, "fetch", async (url: string | URL | Request) => String(url).startsWith("https://generativelanguage.googleapis.com/")
-    ? modelResponse("no_clear_signs") : new Response("x", { headers: { "content-type": "image/jpeg" } }));
+  mock.method(globalThis, "fetch", async () => new Response(new Uint8Array([1])));
+
+  const upload = async (id: string, metres: number, phash: string, resourceType: "image" | "video" = "image") => {
+    assets.set(id, { public_id: id, resource_type: resourceType, created_at: new Date(start + 120_000).toISOString(), bytes: 500, tags: [REPORT_TAG], phash });
+    return triage({
+      publicId: id, resourceType, lat: north(metres), lng: 77.2, locationSource: "gps",
+      note: "8 people trapped on a roof in chest deep flood", lang: "en", assessImage: true,
+    });
+  };
+  const get = async (id: string) => (await listReports()).find((r) => r.publicId === id)!;
+  const noSleep = async () => undefined;
   try {
-    await completeImageReview(witnessId, "image", review.requestedAt);
-    assert.equal((await getReport(witnessId, "image")).corroborations, 1);
-    assert.equal((await getReport(anchorId, "image")).corroborations, 1);
-    await completeImageReview(witnessId, "image", review.requestedAt);
-    assert.equal(anchorWrites, 1);
-  } finally { mock.restoreAll(); restore(); }
+    // Filed first, assessed later: pending, provisional circle, no votes yet.
+    const a = await upload("raahat/reports/ir-a", 150, "5555555555555555");
+    assert.equal(a.imageReview.state, "pending");
+    assert.equal((await get(anchor.public_id)).corroborations, 0, "a pending image can't add corroboration");
+    const provisional = buildIncidents(await listReports());
+    assert.equal(provisional.length, 1);
+    assert.ok(provisional[0].reportIds.includes(a.publicId));
+    assert.equal(provisional[0].provisional, true);
+
+    // Clear: the stored original goes to the model, then the deferred vote is cast once.
+    const clear = provider(jpeg, () => Response.json(answer("no_clear_signs")));
+    const doneA = await runImageReview(a, { fetchImpl: clear.fetchImpl, sleep: noSleep });
+    assert.match(clear.calls[0].url, /\/image\/upload\/raahat\/reports\/ir-a$/, "the stored upload, with no transformations");
+    assert.equal(doneA?.imageReview.state, "clear");
+    assert.equal(doneA?.score, a.score, "the hazard rating is unchanged");
+    assert.equal((await get(anchor.public_id)).corroborations, 1);
+    assert.equal(buildIncidents(await listReports())[0].provisional, false);
+    // The same job again is stale: no model call, no second vote.
+    await runImageReview(a, { fetchImpl: clear.fetchImpl, sleep: noSleep });
+    assert.equal(clear.calls.length, 2);
+    assert.equal((await get(anchor.public_id)).corroborations, 1);
+
+    // Suspected, while a responder verifies the report mid-assessment.
+    const b = await upload("raahat/reports/ir-b", 200, "f0f0f0f0f0f0f0f0");
+    const suspicious = provider(jpeg, async () => {
+      await setStatus(b.publicId, "image", "verified");
+      return Response.json(answer("suspected_synthetic", ["Hands on the left merge into the railing"]));
+    });
+    const doneB = (await runImageReview(b, { fetchImpl: suspicious.fetchImpl, sleep: noSleep }))!;
+    assert.equal(doneB.imageReview.state, "suspected");
+    assert.equal(doneB.status, "verified", "the responder's action during assessment is kept");
+    assert.equal(doneB.score, b.score);
+    assert.equal(doneB.severity, b.severity);
+    assert.deepEqual(doneB.reviewReasons, b.reviewReasons, "no review reason added, so the score isn't cut");
+    assert.equal((await get(anchor.public_id)).corroborations, 1, "a suspected image doesn't vote");
+    assert.ok(!buildIncidents(await listReports()).some((i) => i.reportIds.includes(b.publicId)), "kept out of incident circles");
+    const fcB = factCheck(doneB);
+    assert.equal(fcB.verdict, "pending", "a later concern suspends the public verified badge");
+    assert.ok(!JSON.stringify(fcB).includes("railing"), "the model's explanation is not public");
+
+    // A human accepts the image as evidence: eligibility and votes come back, once.
+    const accepted = await acceptImageEvidence(b.publicId, "image");
+    assert.ok(accepted.imageReview.acceptedAt);
+    assert.equal(accepted.imageReview.state, "suspected", "the model's assessment is kept");
+    assert.deepEqual(accepted.imageReview.concerns, ["Hands on the left merge into the railing"]);
+    assert.equal(accepted.status, "verified", "accepting doesn't change the status");
+    assert.equal(accepted.history.filter((h) => h.action === "image_accepted").length, 1);
+    assert.ok(buildIncidents(await listReports()).some((i) => i.reportIds.includes(b.publicId)));
+    assert.equal((await get(anchor.public_id)).corroborations, 2);
+    assert.equal(factCheck(accepted).verdict, "verified");
+    const again = await acceptImageEvidence(b.publicId, "image");
+    assert.equal(again.history.filter((h) => h.action === "image_accepted").length, 1);
+    assert.equal((await get(anchor.public_id)).corroborations, 2, "repeated acceptance adds no votes");
+
+    // A job that never ran is unavailable on read and is not picked up late.
+    const overdue = await get(stale.public_id);
+    assert.equal(overdue.imageReview.state, "unavailable");
+    const late = provider(jpeg, () => Response.json(answer("no_clear_signs")));
+    await runImageReview({ ...overdue, imageReview: { ...overdue.imageReview, state: "pending" } }, { fetchImpl: late.fetchImpl, sleep: noSleep });
+    assert.equal(late.calls.length, 0);
+
+    // Videos are not assessed.
+    const video = await upload("raahat/reports/ir-video", 5000, "1234123412341234", "video");
+    assert.equal(video.imageReview.state, "not_assessed");
+
+    assert.ok(written.every((w) => !w.includes(KEY)), "the Gemini key never reaches Cloudinary metadata");
+  } finally {
+    mock.restoreAll();
+    for (const [name, value] of [["RAAHAT_AI_MODE", saved.mode], ["GEMINI_API_KEY", saved.key]] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
 });

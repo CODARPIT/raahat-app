@@ -8,7 +8,7 @@ import { checkPhoto } from "@/lib/check";
 import { cloudinary, creds } from "@/lib/cloudinary";
 import { CATEGORY_LABEL } from "@/lib/cld-url";
 import { REPORT_FOLDER, REPORT_TAG, SITE_URL } from "@/lib/constants";
-import { triage } from "@/lib/reports";
+import { runImageReview, triage } from "@/lib/reports";
 import {
   checkMessage,
   downloadFile,
@@ -29,7 +29,7 @@ import { shortId } from "@/lib/verify";
 import { senderKey } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 120; // triage, the reply, then the delayed image check (10 s wait + up to 20 s)
 
 const PENDING_FOLDER = "raahat/telegram";
 const PENDING_MS = 60 * 60_000; // a photo and a location sent within an hour belong together
@@ -102,7 +102,7 @@ async function fileReport(
     note: photo.note.slice(0, 500),
     lang,
     channel: "telegram",
-    deferImageReview: (task) => after(task),
+    assessImage: true,
     reporterHash: key, // salted hash of the chat ID, never the ID itself
   });
   await sendMessage(
@@ -115,7 +115,9 @@ async function fileReport(
       trackUrl: `${SITE_URL}/v/${shortId(report.publicId)}`,
     }),
     lang,
-  );
+  );  // Already inside after(): the reply has gone, so the image check can wait its 10 s here.
+  // The report is filed either way, so a failed check must not trigger a "failed" reply.
+  await runImageReview(report).catch((err) => console.warn("[raahat] Image check not saved:", (err as Error).message));
 }
 
 async function factCheckMedia(chatId: number, key: string, media: Media, lang: Lang) {

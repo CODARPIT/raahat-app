@@ -2,7 +2,8 @@
 // asset's contextual metadata and tags, so Cloudinary is the only datastore.
 
 import type { HistoryEntry } from "./history";
-export type { HistoryEntry };
+import type { ImageReview } from "./image-review";
+export type { HistoryEntry, ImageReview };
 
 export const CATEGORIES = [
   "trapped_or_injured",
@@ -27,17 +28,6 @@ export type Status = "new" | "verified" | "dispatched" | "resolved" | "rejected"
 export type WaterDepth = "none" | "ankle" | "knee" | "waist" | "chest_or_more" | "unknown";
 export type LocationSource = "gps" | "map_pin" | "whatsapp_pin" | "telegram_pin" | "exif" | "coordinator" | "missing";
 export type Channel = "web" | "whatsapp" | "telegram";
-
-/** A visual assessment, never a SynthID result or proof of authenticity. */
-export interface ImageReview {
-  status: "pending" | "no_clear_signs" | "suspected_synthetic" | "inconclusive" | "unavailable" | "not_checked";
-  requestedAt: string;
-  dueAt: string | null;
-  checkedAt: string | null;
-  model: string;
-  reason: string;
-  acceptedAt?: string; // explicit responder override; never set by the model
-}
 
 /** One line of "Why this score". `add` lines sum to the raw score; `adjust` lines are the multiplier and caps. */
 export interface ScoreLine {
@@ -95,7 +85,8 @@ export interface Report {
   phash: string | null;
   reporterHash: string | null; // salted hash of a WhatsApp number or Telegram chat, never the number itself
   history: HistoryEntry[]; // audit trail: filed, status changes, pins (newest last)
-  imageReview?: ImageReview; // separate from hazard severity; older reports have none
+  /** Delayed Gemini check for signs of AI generation; separate from the hazard score. */
+  imageReview: ImageReview;
   /** Derived API fields, not separately persisted or trusted from client input. */
   incidentId?: string | null;
   incidentRadiusM?: number | null;

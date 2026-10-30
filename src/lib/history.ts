@@ -11,8 +11,8 @@ export type HistoryAction =
   | "new"
   | "pinned" // a coordinator placed or moved the pin
   | "wa_pin" // the reporter sent a WhatsApp location pin
-  | "image_reviewed"
-  | "image_accepted";
+  | "image_reviewed" // written by the earlier image-check version; kept so old audit trails still read
+  | "image_accepted"; // a responder accepted the image as evidence despite the AI image check
 
 export interface HistoryEntry {
   action: HistoryAction;
@@ -33,7 +33,7 @@ export const HISTORY_LABEL: Record<HistoryAction, string> = {
   pinned: "Location pinned by the control room",
   wa_pin: "Location sent by the reporter on WhatsApp",
   image_reviewed: "Gemini visual assessment completed (not a verification)",
-  image_accepted: "Image evidence accepted by a responder after review",
+  image_accepted: "Image evidence accepted after review",
 };
 
 export function encodeHistory(entries: HistoryEntry[]): string {

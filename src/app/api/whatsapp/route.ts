@@ -6,7 +6,7 @@ import { after, NextResponse } from "next/server";
 import { cloudinary, creds } from "@/lib/cloudinary";
 import { CATEGORY_LABEL } from "@/lib/cld-url";
 import { REPORT_FOLDER, REPORT_TAG } from "@/lib/constants";
-import { triage } from "@/lib/reports";
+import { runImageReview, triage } from "@/lib/reports";
 import {
   detectLang,
   downloadMedia,
@@ -20,7 +20,7 @@ import {
 } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 120; // triage, the reply, then the delayed image check (10 s wait + up to 20 s)
 
 const PENDING_FOLDER = "raahat/whatsapp";
 const PENDING_MS = 60 * 60_000; // a photo and a location sent within an hour belong together
@@ -79,7 +79,7 @@ async function fileReport(
     note: photo.note.slice(0, 500),
     lang,
     channel: "whatsapp",
-    deferImageReview: (task) => after(task),
+    assessImage: true,
     reporterHash: key, // salted hash of the number, never the number itself
   });
   await sendWhatsApp(
@@ -90,7 +90,9 @@ async function fileReport(
       categoryLabel: CATEGORY_LABEL[report.primaryCategory] ?? report.primaryCategory,
       duplicate: Boolean(report.duplicateOf),
     }),
-  );
+  );  // Already inside after(): the reply has gone, so the image check can wait its 10 s here.
+  // The report is filed either way, so a failed check must not trigger a "failed" reply.
+  await runImageReview(report).catch((err) => console.warn("[raahat] Image check not saved:", (err as Error).message));
 }
 
 async function handle(p: Record<string, string>) {

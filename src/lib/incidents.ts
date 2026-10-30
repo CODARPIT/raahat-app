@@ -1,8 +1,8 @@
 // Incident membership is derived from current report metadata; original evidence
 // stays on its own Cloudinary asset. Anchors never move because a new member joins.
 import { haversineMeters, incidentRadiusForScore, INCIDENT_WINDOW_H, sameIncidentKind, severityFor } from "./triage";
+import { imageConcern, reviewPending } from "./image-review";
 import type { Report, Severity } from "./types";
-import { imageNeedsReview } from "./image-review-state";
 
 export interface Incident {
   id: string;
@@ -15,10 +15,13 @@ export interface Incident {
   reportIds: string[];
   createdAt: string;
   latestAt: string;
+  /** A member is still waiting for its image check, so the circle may change. */
+  provisional: boolean;
 }
 
 function eligible(r: Report): r is Report & { lat: number; lng: number } {
-  return !r.duplicateOf && !r.needsReview && !imageNeedsReview(r.imageReview) && r.status !== "rejected" && r.status !== "resolved"
+  // A suspected AI image joins no circle until a responder accepts it as evidence.
+  return !r.duplicateOf && !r.needsReview && !imageConcern(r) && r.status !== "rejected" && r.status !== "resolved"
     && r.primaryCategory !== "no_emergency" && r.lat !== null && r.lng !== null
     && Number.isFinite(r.lat) && Number.isFinite(r.lng) && Math.abs(r.lat) <= 90 && Math.abs(r.lng) <= 180
     && Number.isFinite(Date.parse(r.createdAt));
@@ -74,6 +77,7 @@ export function buildIncidents(reports: Report[]): Incident[] {
       id: anchor.publicId, anchorId: anchor.publicId, lat: anchor.lat, lng: anchor.lng,
       radiusM: incidentRadiusForScore(strongest.score), severity: strongest.severity, score: strongest.score,
       reportIds: members.map((report) => report.publicId), createdAt: anchor.createdAt,
+      provisional: members.some(reviewPending),
       latestAt: members.reduce((latest, report) => Date.parse(report.createdAt) > Date.parse(latest) ? report.createdAt : latest, anchor.createdAt),
     };
   });

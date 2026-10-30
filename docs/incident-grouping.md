@@ -1,6 +1,6 @@
 # Severity-aware incident grouping
 
-When the optional delayed Gemini image assessment raises a visual concern, that evidence leaves the derived incident until a responder accepts it after review. Its emergency score and status stay intact. Pending evidence cannot add corroboration votes. See [image-assessment.md](image-assessment.md).
+When the optional delayed Gemini image assessment raises a visual concern, that evidence leaves the derived incident until a responder accepts it after review. Its emergency score and status stay intact. Pending evidence cannot add corroboration votes. See [image-review.md](image-review.md).
 
 A report remains an original Cloudinary asset with its own photo, status, location and audit history. An incident is a derived grouping of current reports; it does not delete or auto-verify evidence, require a new database, or change all member statuses together.
 

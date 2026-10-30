@@ -110,8 +110,6 @@ See [incident-grouping.md](docs/incident-grouping.md) for matching rules, limita
 
 ## Scoring
 
-Images can receive a second Gemini visual assessment starting 10 seconds after the initial rating. Set the server-only `GEMINI_API_KEY` to enable it. Results remain separate from severity: suspicious images go to human review without automatic rejection or a “fake” label. This is not SynthID verification. See [image-assessment.md](docs/image-assessment.md) for configuration, result meanings and background execution limits.
-
 `score = category weight + 25% of secondary hazards + 30 if anyone is in danger + 1.5 per person (max 10)
 + water depth (ankle 2 … chest 22) + 5 if vehicles can't reach + 4 per independent corroborating report (max 5)`,
 ×0.3 if there is any reason for human review, capped at 100 (15 if no emergency is seen). Bands: critical ≥ 70, high ≥ 45, moderate ≥ 25.
@@ -124,6 +122,16 @@ Every point is shown in the control room under **"Why this score"**.
 Reasons for review: the AI flags screenshots, memes, drawings, photos of screens or unrelated images, and the
 photo's EXIF date is more than 7 days old ("Photo taken on 3 Jul 2017"). This catches some recycled photos,
 not every old photo. Weights live in `src/lib/triage.ts` and are covered by `tests/triage.test.ts`.
+
+## AI-image check (Gemini)
+
+About 10 seconds after a web, Telegram or WhatsApp photo is rated, Raahat asks Gemini whether the image shows
+concrete signs of AI generation. The result sits in its own panel in the control room and never changes the hazard
+score or status. A **suspected** image stays out of incident circles, corroboration and the public map until a
+responder clicks **Accept image evidence after review**; it is never auto-rejected or called fake. While the check is
+pending, the report's circle is provisional and it can't add corroboration. The reporter follows the result on their
+screen with a one-hour signed receipt. It does not detect SynthID or C2PA and can be wrong both ways. Set
+`GEMINI_API_KEY` (free in Google AI Studio); details, limits and states in [docs/image-review.md](docs/image-review.md).
 
 ## Languages
 
