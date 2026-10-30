@@ -2,7 +2,6 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Gauge } from "@/components/Gauge";
 import { EmergencyIcon } from "@/components/EmergencyActions";
 import { CATEGORY_LABEL, thumbUrl } from "@/lib/cld-url";
 import { REPORT_FOLDER, REPORT_REFRESH_MS, REPORT_TAG } from "@/lib/constants";
@@ -12,6 +11,7 @@ import { fmt, storageLang } from "@/lib/i18n";
 import { listItems, online, OfflineError, putItem, removeItem, type OutboxMeta } from "@/lib/outbox";
 import type { ImageReviewState } from "@/lib/image-review";
 import type { Report } from "@/lib/types";
+import { gov } from "@/locales/gov";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
@@ -79,6 +79,7 @@ async function postReport(upload: Upload, meta: OutboxMeta): Promise<Filed> {
 
 export default function ReportPage() {
   const { locale, t: { report: t, severity, nav } } = useI18n();
+  const g = gov(locale);
   const lang = storageLang(locale); // what the report is stored in; the AI summarises in English and Hindi
   const [upload, setUpload] = useState<Upload | null>(null);
   const [loc, setLoc] = useState<Loc>(null);
@@ -319,38 +320,43 @@ export default function ReportPage() {
           <p className="safety">{t.safety}</p>
         </section>
       ) : result ? (
-        <section aria-live="polite">
-          <div className="result">
-            <Gauge severity={result.severity} />
-            <div>
-              <p className="hint">{t.sent}</p>
-              {/* Repeat and matching reports lead with that, not only the priority. */}
-              {result.duplicateOf ? (
-                <p className="result-note">{t.duplicate}</p>
-              ) : result.corroborations > 0 ? (
-                <p className="result-note">{fmt(t.corroborated, { n: result.corroborations })}</p>
-              ) : null}
-              <h2>
-                {t.priority}: <span className="sev sev-text" data-sev={result.severity}>{severity[result.severity]}</span>
-              </h2>
-              <p lang={lang}>{lang === "hi" ? result.summaryHi : result.summary}</p>
-              <p className="hint">
-                {CATEGORY_LABEL[result.primaryCategory]}
-              </p>
-              {result.lat === null && <p className="hint">{t.pendingLocation}</p>}
-              {result.incidentId && <p className="result-note">
-                {fmt(t.incidentAreaLabel, { radius: result.incidentRadiusM ?? 300 })}{" "}
-                {(result.incidentReportCount ?? 0) > 1 && fmt(t.incidentLinked, { n: result.incidentReportCount ?? 0 })}
-              </p>}
+        <section aria-live="polite" className="gov-ack">
+          <header className="gov-titleband">
+            <p className="gov-crumbs"><a href="/">{nav.home}</a> » {g.citizenServices}</p>
+            <h1>{g.ackTitle}</h1>
+          </header>
+          <p className="gov-ok" role="status"><strong>{g.ackOk}</strong> {g.ackNote}</p>
+          <div className="gov-ref">
+            <span>{g.refNo}</span>
+            <strong className="num">RHT-{result.publicId.replace(`${REPORT_FOLDER}/`, "")}</strong>
+            <small>{new Date(result.createdAt).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" })} IST</small>
+          </div>
+          {result.duplicateOf && <p className="result-note">{t.duplicate}</p>}
+          <table className="gov-kv">
+            <tbody>
+              <tr><th scope="row">{t.priority}</th><td><span className="sev sev-text" data-sev={result.severity}>{severity[result.severity]}</span> · <span className="num">{result.score} / 100</span></td></tr>
+              <tr><th scope="row">{g.hazard}</th><td>{CATEGORY_LABEL[result.primaryCategory]}<br /><span lang={lang}>{lang === "hi" ? result.summaryHi : result.summary}</span></td></tr>
+              <tr><th scope="row">{g.location}</th><td>{result.lat !== null && result.lng !== null ? <span className="num">{result.lat.toFixed(4)}, {result.lng.toFixed(4)}</span> : t.pendingLocation}</td></tr>
+              <tr><th scope="row">{g.helpStatus}</th><td><strong>{result.severity === "critical" && !result.duplicateOf ? g.helpCritical : g.helpVerify}</strong></td></tr>
+              <tr><th scope="row">{g.nearby}</th><td>
+                {result.incidentId
+                  ? <>{fmt(t.incidentAreaLabel, { radius: result.incidentRadiusM ?? 300 })}{" "}{(result.incidentReportCount ?? 0) > 1 && fmt(t.incidentLinked, { n: result.incidentReportCount ?? 0 })}</>
+                  : result.corroborations > 0 ? fmt(t.corroborated, { n: result.corroborations }) : g.nearbyNone}
+              </td></tr>
               {reviewState && reviewState !== "not_assessed" && (
-                <p className="hint" role="status">
+                <tr><th scope="row">{g.photoCheck}</th><td role="status">
                   {reviewState === "pending" ? t.reviewPending
                     : reviewState === "clear" ? t.reviewClear
                     : reviewState === "suspected" ? t.reviewSuspected
                     : t.reviewUnclear}
-                </p>
+                </td></tr>
               )}
-            </div>
+              <tr><th scope="row">{g.status}</th><td>{g.statusValue}</td></tr>
+            </tbody>
+          </table>
+          <div className="gov-ack-actions">
+            <a className="gov-btn gov-btn-blue" href={`/v/${result.publicId.replace(`${REPORT_FOLDER}/`, "")}`}>{g.track}</a>
+            <button type="button" className="gov-btn gov-btn-line" onClick={() => window.print()}>{g.print}</button>
           </div>
           <div className="preview" style={{ marginTop: 16 }}>
             <img src={thumbUrl(result, "normal", true)} alt="Your photo, with faces pixelated as responders and the public see it" />
@@ -359,13 +365,20 @@ export default function ReportPage() {
         </section>
       ) : (
         <form className="urgent-report-form" onSubmit={(event) => { event.preventDefault(); void send(); }}>
-          <header className="urgent-heading">
+          <header className="urgent-heading gov-titleband">
+            <p className="gov-crumbs"><a href="/">{nav.home}</a> » {g.citizenServices}</p>
             <h1>{t.urgentTitle}</h1>
             <p>{t.urgentLead}</p>
           </header>
+          <ol className="gov-progress" aria-label={g.steps}>
+            <li className={upload || local ? "is-done" : "is-current"}><span className="num">1</span>{g.stepPhoto}</li>
+            <li className={(upload || local) && locState === "found" ? "is-done" : upload || local ? "is-current" : undefined}><span className="num">2</span>{g.stepLocation}</li>
+            <li className={sending ? "is-current" : undefined}><span className="num">3</span>{g.stepSubmit}</li>
+          </ol>
+          <p className="gov-mandatory">{g.mandatory}</p>
 
           <section className="urgent-photo" aria-labelledby="photo-step">
-            <h2 id="photo-step"><span className="urgent-step" aria-hidden>1</span>{t.urgentPhotoStep}</h2>
+            <h2 id="photo-step"><span className="urgent-step" aria-hidden>1</span>{t.urgentPhotoStep}<span className="gov-req" aria-hidden> *</span></h2>
             {local ? <div className="preview urgent-photo-preview"><img src={local.url} alt="" />
               <span className="urgent-photo-status" role="status"><EmergencyIcon kind="check" size={18} />{uploading ? t.uploading : t.urgentPhotoReady}</span>
             </div> : upload ? <div className="preview urgent-photo-preview"><img src={thumbUrl(upload, "normal", true)} alt="" /></div> : null}

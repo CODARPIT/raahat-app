@@ -74,6 +74,7 @@ export function AccessBar() {
     <div className="access-bar">
       <div className="access-inner">
         <a href="#main" className="skip-link">{t.skip}</a>
+        <span className="access-initiative"><span lang="hi">नागरिक पहल</span><span aria-hidden> | </span><span lang="en">A Citizen Initiative</span></span>
         <nav className="access-links" aria-label="Accessibility and site links">
           <a href="#main">{t.skip}</a>
           <a href="/accessibility">{t.screenReader}</a>
@@ -107,8 +108,8 @@ export function AccessBar() {
               {size === "sm" ? "A−" : size === "md" ? "A" : "A+"}
             </button>
           ))}
-          <button type="button" className="tool" aria-pressed={p.contrast} onClick={() => apply({ ...p, contrast: !p.contrast })}>
-            <span aria-hidden>◐</span> {t.contrast}
+          <button type="button" className="tool contrast-square" aria-pressed={p.contrast} aria-label={t.contrast} title={t.contrast} onClick={() => apply({ ...p, contrast: !p.contrast })}>
+            <span aria-hidden>A</span>
           </button>
           <button type="button" className="tool" onClick={toggleTheme} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
             <span aria-hidden>{theme === "dark" ? "☀" : "☾"}</span> {theme === "dark" ? t.light : t.dark}

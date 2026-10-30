@@ -54,6 +54,14 @@ export function SiteFooter({ t }: { t: Pick<Dict, "footer" | "nav" | "access"> }
           </ul>
         </section>
       </div>
+      <nav className="footer-policies" aria-label={f.policies}>
+        <Link href="/disclaimer">{f.policies}</Link>
+        <Link href="/privacy">{f.privacy}</Link>
+        <Link href="/accessibility">{f.accessibility}</Link>
+        <Link href="/disclaimer">{f.disclaimer}</Link>
+        <Link href="/help">{t.nav.help}</Link>
+        <Link href="/sitemap">{t.access.sitemap}</Link>
+      </nav>
       <div className="footer-base">
         <div className="footer-brand">
           <Seal size={44} title="" id="seal-footer" />

@@ -3,7 +3,7 @@ import { getI18n } from "@/lib/locale";
 
 // Shared frame for the policy and help pages: breadcrumbs, a title band and a
 // "last reviewed" line, as on government portals.
-export const LAST_REVIEWED = "29 October 2026";
+export const LAST_REVIEWED = "31 October 2026";
 
 /**
  * `translated` pages carry their own text in every language; the rest (policies, safety)

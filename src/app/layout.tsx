@@ -12,6 +12,7 @@ import { getI18n } from "@/lib/locale";
 import { DICTS } from "@/locales";
 import "./globals.css";
 import "./portal.css";
+import "./gov.css";
 
 const DESCRIPTION = "Citizen disaster reports, triaged by Cloudinary AI and delivered to responders on any network.";
 
@@ -26,8 +27,9 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#0f2f4f" };
 
-// Apply saved display settings (theme, text size, contrast) before first paint.
-const PREFS_SCRIPT = `try{var d=document.documentElement,t=localStorage.getItem("${THEME_KEY}");if(t==="light"||t==="dark")d.dataset.theme=t;var a=JSON.parse(localStorage.getItem("${A11Y_KEY}")||"{}");if(a.text==="sm"||a.text==="lg")d.dataset.text=a.text;if(a.contrast)d.dataset.contrast="high"}catch(e){}`;
+// Apply saved display settings before first paint. Light unless someone chose dark,
+// like government portals; the Dark button in the top bar still switches.
+const PREFS_SCRIPT = `try{var d=document.documentElement,t=localStorage.getItem("${THEME_KEY}");d.dataset.theme=t==="dark"?"dark":"light";var a=JSON.parse(localStorage.getItem("${A11Y_KEY}")||"{}");if(a.text==="sm"||a.text==="lg")d.dataset.text=a.text;if(a.contrast)d.dataset.contrast="high"}catch(e){}`;
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const { locale, t } = await getI18n();
