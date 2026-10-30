@@ -114,6 +114,14 @@ test("a different photo of the same incident corroborates it", () => {
   assert.deepEqual(m.corroborates, ["b"]);
 });
 
+test("a shared hazard corroborates even when the main category differs", () => {
+  const m = matchReport(
+    { lat: 26.1451, lng: 91.7367, phash: "ffff0000ffff0000", primaryCategory: "trapped_or_injured", categories: ["trapped_or_injured", "flood"], createdAt: now },
+    existing,
+  );
+  assert.deepEqual(m.corroborates.sort(), ["a", "b"]);
+});
+
 test("same category far away or long ago does not corroborate", () => {
   const far = matchReport({ lat: 28.6, lng: 77.2, phash: null, primaryCategory: "flood", createdAt: now }, existing);
   const old = matchReport({ lat: 26.145, lng: 91.7366, phash: null, primaryCategory: "flood", createdAt: "2026-10-25T09:00:01Z" }, existing);

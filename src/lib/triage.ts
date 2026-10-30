@@ -196,6 +196,8 @@ export interface Candidate {
   lng: number | null;
   phash: string | null;
   primaryCategory: Category;
+  /** Every hazard the AI saw; defaults to the primary one. */
+  categories?: Category[];
   createdAt: string;
   duplicateOf: string | null;
 }
@@ -220,6 +222,12 @@ function distance(a: Pick<Candidate, "lat" | "lng">, b: Pick<Candidate, "lat" | 
   return haversineMeters(a.lat, a.lng, b.lat, b.lng);
 }
 
+/** Same kind of incident: any hazard in common, e.g. "trapped" on a roof and "flood" in the street. */
+function sameIncidentKind(a: Pick<Candidate, "primaryCategory" | "categories">, b: Pick<Candidate, "primaryCategory" | "categories">): boolean {
+  const kinds = new Set(a.categories ?? [a.primaryCategory]);
+  return (b.categories ?? [b.primaryCategory]).some((k) => k !== "no_emergency" && kinds.has(k));
+}
+
 export function matchReport(incoming: Incoming, existing: Candidate[]): MatchResult {
   const primaries = existing.filter((c) => !c.duplicateOf);
   const t = Date.parse(incoming.createdAt);
@@ -242,7 +250,7 @@ export function matchReport(incoming: Incoming, existing: Candidate[]): MatchRes
   if (incoming.primaryCategory === "no_emergency") return { duplicateOf: null, corroborates: [] };
   const corroborates = primaries
     .filter((c) => {
-      if (c.primaryCategory !== incoming.primaryCategory) return false;
+      if (!sameIncidentKind(incoming, c)) return false;
       const d = distance(incoming, c);
       return d !== null && d <= INCIDENT_RADIUS_M && Math.abs(t - Date.parse(c.createdAt)) <= INCIDENT_WINDOW_H * 3600_000;
     })

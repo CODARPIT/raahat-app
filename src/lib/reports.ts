@@ -313,6 +313,7 @@ function candidatesFrom(reports: Report[], exceptId?: string): Candidate[] {
       lng: r.lng,
       phash: r.phash,
       primaryCategory: r.primaryCategory,
+      categories: r.categories,
       createdAt: r.createdAt,
       duplicateOf: r.duplicateOf,
     }));
@@ -394,7 +395,7 @@ export async function triage(input: TriageInput): Promise<Report> {
   const reviewReasons = [...aiReviewReasons(findings), ...(recycled ? [recycled] : []), ...(oldPhoto ? [oldPhoto] : [])];
   const firstPass = scoreReport({ findings, corroborations: 0, reviewReasons });
   const match = matchReport(
-    { lat, lng, phash: asset.phash ?? null, primaryCategory: firstPass.primaryCategory, createdAt },
+    { lat, lng, phash: asset.phash ?? null, primaryCategory: firstPass.primaryCategory, categories: findings.categories, createdAt },
     candidatesFrom(existing, input.publicId),
   );
 
@@ -483,7 +484,7 @@ export async function setLocation(
 
   const existing = await listReports();
   const match = matchReport(
-    { lat, lng, phash: null, primaryCategory: target.primaryCategory, createdAt: target.createdAt },
+    { lat, lng, phash: null, primaryCategory: target.primaryCategory, categories: target.categories, createdAt: target.createdAt },
     candidatesFrom(existing, publicId),
   );
   const saved = await save({ ...located, corroborations: target.corroborations + match.corroborates.length });
