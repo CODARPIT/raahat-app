@@ -1,20 +1,20 @@
 import type { MetadataRoute } from "next";
 
-// Lets citizens and responders add Raahat to their home screen like an app.
+// Lets someone keep Raahat Shield on their home screen like an app.
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Raahat: Citizen Disaster Reporting & Triage Portal",
-    short_name: "Raahat",
-    description: "Report a disaster photo in under a minute; control rooms see the most urgent first.",
+    name: "Raahat Shield: prove a morphed photo is fake",
+    short_name: "Raahat Shield",
+    description: "Prove a morphed photo is fake, build a police-ready evidence pack, and protect future photos. Private, no sign-up.",
     start_url: "/",
     display: "standalone",
-    background_color: "#eef2f0",
-    theme_color: "#0f2f4f",
+    background_color: "#f6f2f9",
+    theme_color: "#3b1f4a",
     lang: "en-IN",
     icons: [{ src: "/icon.svg", sizes: "any", type: "image/svg+xml" }],
     shortcuts: [
-      { name: "Report an incident", url: "/report" },
-      { name: "Control room", url: "/respond" },
+      { name: "Prove it's fake", url: "/case" },
+      { name: "Protect my photos", url: "/protect" },
     ],
   };
 }

@@ -1,89 +1,73 @@
 import Link from "next/link";
 import { InfoPage } from "@/components/InfoPage";
 
-export const metadata = { title: "Help & FAQs", description: "How to report a disaster with Raahat, what happens to your photo, and how your privacy is protected." };
+export const metadata = { title: "Get help now", description: "What to do if someone is blackmailing you with a morphed photo: helplines, how to report, and how to get it removed." };
 
-const FAQS: { q: string; qHi: string; a: React.ReactNode }[] = [
+const HELPLINES = [
+  { number: "1930", name: "National cyber crime helpline", when: "Report blackmail, extortion or money already paid. Open 24 hours." },
+  { number: "181", name: "Women helpline", when: "Someone to talk to, counselling and local support." },
+  { number: "7827170170", name: "National Commission for Women", when: "WhatsApp complaints about harassment of women." },
+  { number: "112", name: "Emergency", when: "If you feel unsafe or are thinking of harming yourself." },
+];
+
+const FAQS: { q: string; a: React.ReactNode }[] = [
   {
-    q: "How do I report a disaster?",
-    qHi: "आपदा की रिपोर्ट कैसे करें?",
+    q: "Should I pay so they go away?",
+    a: <>No. Paying almost always leads to more demands. Stop replying, keep the evidence, and report it. If you have already paid, call <a href="tel:1930">1930</a> quickly: banks can sometimes hold the money.</>,
+  },
+  {
+    q: "Should I delete the chats or block them?",
+    a: <>Not yet. First take screenshots of the messages, their username or number, any payment details and the link to the image. Then you can block and report the account.</>,
+  },
+  {
+    q: "How do I report it to the police?",
     a: (
       <>
-        Open <Link href="/report">Report an incident</Link>, tap <strong>Take a photo</strong>, allow your location (or tap the map,
-        or choose &ldquo;I don&rsquo;t know&rdquo; and describe the place), add a short note if you can, and tap <strong>Send report</strong>.
-        It takes about a minute and works in Hindi or English.
+        Go to <a href="https://cybercrime.gov.in" target="_blank" rel="noreferrer">cybercrime.gov.in</a> and choose &ldquo;Report
+        women/child related crime&rdquo;. You can report anonymously. The <Link href="/case#pack">evidence pack</Link> gives you the
+        complaint text and file fingerprints to attach. You can also visit any police station; they must register your complaint.
       </>
     ),
   },
   {
-    q: "Should I call 112 as well?",
-    qHi: "क्या मुझे 112 पर भी कॉल करना चाहिए?",
-    a: <>Yes. If anyone&rsquo;s life is in danger, call <a href="tel:112">112</a> first. Raahat helps control rooms decide where to send help; it does not replace emergency services.</>,
-  },
-  {
-    q: "What if I have no signal?",
-    qHi: "अगर नेटवर्क न हो तो?",
-    a: <>Fill in the report anyway. Raahat saves it on your phone and sends it automatically as soon as the connection returns. You can close the page and open it again later.</>,
-  },
-  {
-    q: "What if I don't know my exact location?",
-    qHi: "अगर मुझे अपनी सही जगह न पता हो?",
-    a: <>Choose &ldquo;I don&rsquo;t know&rdquo; and describe the place: the nearest school, temple, road or village. Your report is never dropped; the control room places it on the map.</>,
-  },
-  {
-    q: "What happens to my photo?",
-    qHi: "मेरी फ़ोटो का क्या होता है?",
+    q: "How do I get the image taken down?",
     a: (
       <>
-        Cloudinary AI reads it to work out the type of danger, how many people are visible and how deep the water is. The same photo
-        forwarded many times is merged into one report, and different photos of the same incident raise its priority. A person in
-        the control room sees every report; nothing is deleted by the AI.
+        Report the post on the platform as non-consensual intimate imagery and send their grievance officer the takedown text from
+        your evidence pack. Under the IT Rules 2021, platforms must remove artificially morphed intimate images within 24 hours of
+        your complaint. <a href="https://stopncii.org" target="_blank" rel="noreferrer">StopNCII.org</a> can stop re-uploads on
+        many platforms without you sharing the image.
       </>
     ),
   },
   {
-    q: "Who can see my report?",
-    qHi: "मेरी रिपोर्ट कौन देख सकता है?",
-    a: (
-      <>
-        Control-room staff see the exact location, your note and the photo. On the public <Link href="/map">live map</Link>, faces are
-        pixelated, the location is rounded to about 110 m, and your note is hidden. See the <Link href="/privacy">privacy policy</Link>.
-      </>
-    ),
+    q: "I am under 18. What should I do?",
+    a: <>Tell a parent, teacher or another adult you trust today, and call <a href="tel:1930">1930</a> or <a href="tel:1098">1098</a> (Childline). Reports involving children are handled under POCSO and taken very seriously. <a href="https://takeitdown.ncmec.org" target="_blank" rel="noreferrer">Take It Down</a> can help remove images of minors.</>,
   },
   {
-    q: "How is the priority decided?",
-    qHi: "प्राथमिकता कैसे तय होती है?",
-    a: <>A simple, visible score: danger to life first, then how fast the hazard spreads, then whether help can reach the spot. Control rooms can see every point that went into each score.</>,
-  },
-  {
-    q: "Can I report on Telegram?",
-    qHi: "क्या मैं टेलीग्राम पर रिपोर्ट कर सकता हूँ?",
-    a: <>Yes, when the Raahat bot is switched on: open the bot shown on the <Link href="/#telegram">home page</Link>, send a photo, then tap &ldquo;Send my location&rdquo;. It replies with the priority and a link to follow your report.</>,
-  },
-  {
-    q: "How do I know if a viral photo or reel is real?",
-    qHi: "कैसे पता करें कि वायरल फ़ोटो या रील सच है?",
-    a: <>Upload it (or a screenshot of a clear frame) on <Link href="/check">Check a viral photo</Link>. Raahat tells you if it matches a report the control room verified or marked false, or a known old photo.</>,
-  },
-  {
-    q: "I saw a \"Verified by Raahat\" post. Is it genuine?",
-    qHi: "मैंने \"राहत द्वारा सत्यापित\" पोस्ट देखी। क्या वह असली है?",
-    a: <>Every genuine Raahat card has a link to a fact-check page on this site (raahat-kappa.vercel.app/v/…). Open it. If it doesn&rsquo;t show a page with the same verdict, the card is fake. Raahat never asks for money or personal details.</>,
+    q: "Is my case private here?",
+    a: <>Yes. Nothing is published, you need no account, the fake image is blurred on screen, and <strong>Delete my case</strong> removes everything. See the <Link href="/privacy">privacy policy</Link>.</>,
   },
 ];
 
 export default function HelpPage() {
   return (
-    <InfoPage title="Help & FAQs" titleHi="सहायता एवं प्रश्न">
-      <p className="lead">Answers for citizens reporting a disaster. Control-room staff: press <kbd>?</kbd> in the control room for keyboard shortcuts.</p>
+    <InfoPage title="Get help now" titleHi="अभी मदद पाएँ">
+      <p className="lead">You are not at fault, and you are not alone. These people can help today.</p>
+      <ul className="helpline-cards">
+        {HELPLINES.map((h) => (
+          <li key={h.number}>
+            <a href={`tel:${h.number}`} className="num">{h.number}</a>
+            <strong>{h.name}</strong>
+            <span>{h.when}</span>
+          </li>
+        ))}
+      </ul>
+      <h2>Common questions</h2>
       <div className="faq">
         {FAQS.map((f, i) => (
           <details key={i} open={i === 0}>
-            <summary>
-              <span>{f.q}</span>
-              <span className="faq-hi" lang="hi">{f.qHi}</span>
-            </summary>
+            <summary><span>{f.q}</span></summary>
             <div className="faq-a">{f.a}</div>
           </details>
         ))}
