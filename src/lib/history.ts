@@ -10,7 +10,9 @@ export type HistoryAction =
   | "rejected"
   | "new"
   | "pinned" // a coordinator placed or moved the pin
-  | "wa_pin"; // the reporter sent a WhatsApp location pin
+  | "wa_pin" // the reporter sent a WhatsApp location pin
+  | "image_reviewed"
+  | "image_accepted";
 
 export interface HistoryEntry {
   action: HistoryAction;
@@ -19,7 +21,7 @@ export interface HistoryEntry {
 
 export const HISTORY_MAX = 12;
 
-const ACTIONS: HistoryAction[] = ["filed", "verified", "dispatched", "resolved", "rejected", "new", "pinned", "wa_pin"];
+const ACTIONS: HistoryAction[] = ["filed", "verified", "dispatched", "resolved", "rejected", "new", "pinned", "wa_pin", "image_reviewed", "image_accepted"];
 
 export const HISTORY_LABEL: Record<HistoryAction, string> = {
   filed: "Report received and triaged",
@@ -30,6 +32,8 @@ export const HISTORY_LABEL: Record<HistoryAction, string> = {
   new: "Reopened",
   pinned: "Location pinned by the control room",
   wa_pin: "Location sent by the reporter on WhatsApp",
+  image_reviewed: "Gemini visual assessment completed (not a verification)",
+  image_accepted: "Image evidence accepted by a responder after review",
 };
 
 export function encodeHistory(entries: HistoryEntry[]): string {

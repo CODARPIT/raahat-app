@@ -29,6 +29,8 @@ import {
   type KnownOldPhoto,
 } from "./triage";
 import { getFindings } from "./vision";
+import { assessImage, newImageReview, waitForImageReview } from "./image-review";
+import { decodeImageReview, imageNeedsReview } from "./image-review-state";
 import {
   CATEGORIES,
   type Category,
@@ -91,7 +93,8 @@ function findingsOf(r: Pick<Report, "categories" | "peopleVisible" | "peopleInDa
 /** Score, severity and "Why this score" always come from the same stored facts. */
 function rescore<T extends Report>(r: T): T {
   const s = scoreReport({ findings: findingsOf(r), corroborations: r.corroborations, reviewReasons: r.reviewReasons });
-  return { ...r, score: s.score, severity: s.severity, primaryCategory: s.primaryCategory, needsReview: s.needsReview, breakdown: s.breakdown };
+  return { ...r, score: s.score, severity: s.severity, primaryCategory: s.primaryCategory,
+    needsReview: s.needsReview || imageNeedsReview(r.imageReview), breakdown: s.breakdown };
 }
 
 export function toReport(r: CldResource): Report | null {
@@ -139,6 +142,7 @@ export function toReport(r: CldResource): Report | null {
     reporterHash: c.rh || null,
     // Reports filed before the audit trail existed start with their filing time.
     history: c.hist ? decodeHistory(c.hist) : [{ action: "filed", at: r.created_at }],
+    imageReview: decodeImageReview(c.img_review),
   });
 }
 
@@ -163,7 +167,9 @@ function toContext(r: Report): Ctx {
     summary: r.summary.slice(0, 300),
     summary_hi: r.summaryHi.slice(0, 300),
     status: r.status,
-    review: r.needsReview ? "1" : "0",
+    // The legacy flag represents triage reasons only. Gemini has its own state;
+    // folding it into this flag would apply the old score penalty on the next read.
+    review: r.reviewReasons.length ? "1" : "0",
     reasons: r.reviewReasons.join(REASON_SEP).slice(0, 400),
     dup_of: r.duplicateOf ?? "",
     corrob: String(r.corroborations),
@@ -173,6 +179,7 @@ function toContext(r: Report): Ctx {
     phash: r.phash ?? "",
     rh: r.reporterHash ?? "",
     hist: encodeHistory(r.history),
+    img_review: r.imageReview ? JSON.stringify(r.imageReview) : "",
   };
 }
 
@@ -350,6 +357,8 @@ export interface TriageInput {
   lang: "en" | "hi";
   channel?: Channel;
   reporterHash?: string | null;
+  /** Next.js after() keeps this work alive after the initial response. Scripts can omit it. */
+  deferImageReview?: (task: () => Promise<void>) => void;
 }
 
 /** The oldest report of a near-identical photo, anywhere: its AI reading is reused. */
@@ -406,6 +415,7 @@ export async function triage(input: TriageInput): Promise<Report> {
   const createdAt = asset.created_at;
   const oldPhoto = oldPhotoReason(exifDate(asset.image_metadata), new Date(createdAt));
   const recycled = knownOldReason(asset.phash ?? null, library);
+  const imageReview = newImageReview(input.resourceType, !!input.deferImageReview);
   const reviewReasons = [...aiReviewReasons(findings), ...(recycled ? [recycled] : []), ...(oldPhoto ? [oldPhoto] : [])];
   let firstPass = scoreReport({ findings, corroborations: 0, reviewReasons });
   let match = reviewReasons.length ? { duplicateOf: null, corroborates: [] } : matchReport(
@@ -419,6 +429,9 @@ export async function triage(input: TriageInput): Promise<Report> {
     firstPass = scoreReport({ findings, corroborations: 0, reviewReasons });
     match = { duplicateOf: null, corroborates: [] };
   }
+  // Pending images can be filed and rated, but cannot yet vote for other reports.
+  match.corroborates = match.corroborates.filter((id) => existing.find((r) => r.publicId === id)?.imageReview?.status !== "pending");
+  if (imageReview.status === "pending") match.corroborates = [];
 
   const draft: Report = {
     publicId: input.publicId,
@@ -455,6 +468,7 @@ export async function triage(input: TriageInput): Promise<Report> {
     phash: asset.phash ?? null,
     reporterHash: input.reporterHash ?? null,
     history: addHistory([], "filed", new Date(createdAt)),
+    imageReview,
   };
   const report = await save(draft);
 
@@ -462,16 +476,57 @@ export async function triage(input: TriageInput): Promise<Report> {
   const bumpIds = match.duplicateOf ? [] : match.corroborates;
   await bump(existing.filter((r) => bumpIds.includes(r.publicId)));
 
+  if (report.imageReview?.status === "pending" && input.deferImageReview) {
+    input.deferImageReview(async () => {
+      try { await completeImageReview(report.publicId, report.resourceType, report.imageReview!.requestedAt); }
+      catch { console.warn("[raahat] Background image assessment could not be saved; responder verification is still needed."); }
+    });
+  }
+
   return report;
 }
 
 /** Read one report straight from the Admin API (strongly consistent, unlike Search). */
-async function getReport(publicId: string, resourceType: "image" | "video"): Promise<Report> {
+export async function getReport(publicId: string, resourceType: "image" | "video"): Promise<Report> {
   const asset = (await cloudinary.api.resource(publicId, { resource_type: resourceType })) as CldResource;
   const fromApi = asset.tags?.includes(REPORT_TAG) ? toReport(asset) : null;
   if (!fromApi) throw new Error("Report not found.");
   const cached = cache.get(publicId);
   return cached && Date.parse(cached.updatedAt) > Date.parse(fromApi.updatedAt) ? cached : fromApi;
+}
+
+/** Re-read after the model call so a responder's intervening status/pin is preserved. */
+export async function completeImageReview(publicId: string, resourceType: "image" | "video", requestedAt: string): Promise<void> {
+  let target = await getReport(publicId, resourceType);
+  if (target.imageReview?.status !== "pending" || target.imageReview.requestedAt !== requestedAt) return;
+  await waitForImageReview(target.imageReview);
+  target = await getReport(publicId, resourceType);
+  if (target.imageReview?.status !== "pending" || target.imageReview.requestedAt !== requestedAt) return;
+  const assessment = await assessImage(target, target.imageReview);
+  const latest = await getReport(publicId, resourceType);
+  if (latest.imageReview?.status !== "pending" || latest.imageReview.requestedAt !== requestedAt) return;
+  const reviewed = rescore({ ...latest, imageReview: { ...assessment, acceptedAt: latest.imageReview.acceptedAt },
+    history: addHistory(latest.history, "image_reviewed") });
+  await saveWithReviewedCorroboration(reviewed, assessment.status === "no_clear_signs");
+}
+
+async function saveWithReviewedCorroboration(report: Report, mayCorroborate: boolean): Promise<Report> {
+  if (!mayCorroborate || report.needsReview || report.duplicateOf || report.status === "resolved" || report.status === "rejected") return save(report);
+  const existing = await listReports();
+  const match = matchReport(report, candidatesFrom(existing, report.publicId));
+  const targets = existing.filter((r) => match.corroborates.includes(r.publicId) && r.imageReview?.status !== "pending");
+  const saved = await save({ ...report, corroborations: report.corroborations + targets.length });
+  await bump(targets);
+  return saved;
+}
+
+/** An explicit image decision does not mark the incident verified or clear other flags. */
+export async function acceptImageEvidence(publicId: string, resourceType: "image" | "video"): Promise<Report> {
+  const target = await getReport(publicId, resourceType);
+  if (!target.imageReview || target.imageReview.status !== "suspected_synthetic") throw new Error("There is no image assessment awaiting a decision.");
+  if (target.imageReview.acceptedAt) return target;
+  return saveWithReviewedCorroboration(rescore({ ...target, imageReview: { ...target.imageReview, acceptedAt: new Date().toISOString() },
+    history: addHistory(target.history, "image_accepted") }), true);
 }
 
 export async function setStatus(publicId: string, resourceType: "image" | "video", status: Status): Promise<Report> {
@@ -505,7 +560,8 @@ export async function setLocation(
     { lat, lng, phash: target.phash, primaryCategory: target.primaryCategory, categories: target.categories, createdAt: target.createdAt },
     candidatesFrom(existing, publicId),
   );
-  const newVotes = firstLocation && !match.duplicateOf ? match.corroborates : [];
+  const newVotes = firstLocation && !match.duplicateOf && target.imageReview?.status !== "pending"
+    ? match.corroborates.filter((id) => existing.find((r) => r.publicId === id)?.imageReview?.status !== "pending") : [];
   const movedCopy = target.duplicateOf && !match.duplicateOf;
   const saved = await save({ ...located, duplicateOf: match.duplicateOf,
     reviewReasons: movedCopy ? [...new Set([...target.reviewReasons, REASON_REUSED_PHOTO])] : target.reviewReasons,

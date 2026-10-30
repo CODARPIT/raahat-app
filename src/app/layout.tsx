@@ -5,6 +5,7 @@ import { AccessBar } from "@/components/AccessBar";
 import { Seal } from "@/components/Seal";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteNav } from "@/components/SiteNav";
+import { EmergencyActions } from "@/components/EmergencyActions";
 import { LocaleProvider } from "@/components/LocaleProvider";
 import { A11Y_KEY, SITE_URL, THEME_KEY } from "@/lib/constants";
 import { getI18n } from "@/lib/locale";
@@ -66,6 +67,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           {children}
         </div>
         <SiteFooter t={t} />
+        <EmergencyActions />
         </LocaleProvider>
         <Analytics />
       </body>

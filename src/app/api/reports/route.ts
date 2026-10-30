@@ -1,15 +1,17 @@
 import { errorMessage } from "@/lib/errors";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { isResponder } from "@/lib/auth";
 import { coarsen } from "@/lib/triage";
-import { listReports, listReportsDetailed, setLocation, setStatus, triage } from "@/lib/reports";
+import { acceptImageEvidence, listReports, listReportsDetailed, setLocation, setStatus, triage } from "@/lib/reports";
+import { createReportReceipt } from "@/lib/report-receipt";
+import { currentImageReview } from "@/lib/image-review-state";
 import { annotateIncidents, buildIncidents } from "@/lib/incidents";
 import { clientIp, createLimiter, tooMany } from "@/lib/rate-limit";
 import { aiMode, getAiQuota } from "@/lib/vision";
 import { isLocated, type LocationSource, type Report, type Status } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60; // AI Vision + dedupe can take a few seconds
+export const maxDuration = 120; // Initial triage, then the delayed Gemini assessment in after().
 
 // Each filed report costs AI Vision quota, so one address can file at most 10 a minute.
 const fileLimit = createLimiter({ max: 10, windowMs: 60_000 });
@@ -29,6 +31,7 @@ function publicView(r: Report): Report {
     phash: null,
     reporterHash: null,
     history: [],
+    imageReview: r.imageReview ? { ...currentImageReview(r.imageReview)!, reason: "" } : undefined,
   };
 }
 
@@ -47,7 +50,7 @@ export async function GET() {
       responder,
       stale,
       ...(responder ? { ai: { mode: aiMode(), quota: getAiQuota() } } : {}),
-      reports: responder ? annotated : annotated.map(publicView),
+      reports: responder ? annotated.map((r) => ({ ...r, imageReview: currentImageReview(r.imageReview) })) : annotated.map(publicView),
       incidents: responder ? incidents : incidents.map((incident) => ({ ...incident, lat: coarsen(incident.lat), lng: coarsen(incident.lng) })),
     });
   } catch (err) {
@@ -92,10 +95,11 @@ export async function POST(req: Request) {
       note: String(body.note ?? "").slice(0, 500),
       lang: body.lang === "hi" ? "hi" : "en",
       channel: "web",
+      deferImageReview: (task) => after(task),
     });
     const incidents = buildIncidents((await listReports()).filter(isPublic));
     const [annotated] = annotateIncidents([report], incidents);
-    return NextResponse.json({ report: publicView(annotated) });
+    return NextResponse.json({ report: publicView(annotated), reviewReceipt: createReportReceipt(report) });
   } catch (err) {
     return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
@@ -114,10 +118,12 @@ export async function PATCH(req: Request) {
     status?: Status;
     lat?: number;
     lng?: number;
+    acceptImage?: boolean;
   };
   const resourceType = body.resourceType === "video" ? "video" : "image";
   if (!body.publicId) return NextResponse.json({ error: "Which report? publicId is missing." }, { status: 400 });
   try {
+    if (body.acceptImage === true) return NextResponse.json({ report: await acceptImageEvidence(body.publicId, resourceType) });
     if (body.lat !== undefined || body.lng !== undefined) {
       const lat = Number(body.lat);
       const lng = Number(body.lng);

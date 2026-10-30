@@ -67,11 +67,13 @@ export default async function Home() {
           <p><Link href="/">{dict.nav.home}</Link><span aria-hidden> / </span>{t.eyebrow}</p>
           <span className={`live-dot${live ? "" : " off"}`}>{live ? fmt(t.updated, { time: updated }) : t.liveOff}</span>
         </div>
-        <div className="portal-notice" role="note">
-          <span className="portal-notice-tag">{t.noticeTag}</span>
-          <p>{t.notice}</p>
-          <a href="tel:112" aria-label={`${dict.access.emergency}: 112`}>112 <ExternalArrow /></a>
-        </div>
+        <section className="portal-urgent" aria-labelledby="urgent-report-title">
+          <div><h2 id="urgent-report-title">{dict.report.urgentTitle}</h2><p>{dict.report.urgentNoTyping}</p></div>
+          <div className="portal-urgent-actions">
+            <Link href="/report" className="btn emergency-report-button"><Icon d={ICON.camera} />{t.ctaReport}<span aria-hidden>→</span></Link>
+            <a href="tel:112" className="btn emergency-call-button">{dict.report.urgentCall}</a>
+          </div>
+        </section>
 
         <div className="portal-workspace">
           <PortalBanner label={t.services} mapUnavailableLabel={t.liveOff} reportCountLabel={t.openReportsLabel} slides={[
@@ -91,6 +93,11 @@ export default async function Home() {
           </aside>
         </div>
 
+        <div className="portal-notice" role="note">
+          <span className="portal-notice-tag">{t.noticeTag}</span>
+          <p>{t.notice}</p>
+          <a href="tel:112" aria-label={`${dict.access.emergency}: 112`}>112 <ExternalArrow /></a>
+        </div>
         <section className="portal-quick-services" aria-labelledby="services-h">
           <div className="portal-section-heading"><h2 id="services-h">{t.services}</h2><Link className="portal-text-link" href="/help">{dict.nav.help} <span aria-hidden>→</span></Link></div>
           <ul>{services.map((s, i) => <li key={s.title}><Link href={s.href} className={i === 0 ? "primary-service" : undefined}><span className="quick-service-icon"><Icon d={s.icon} /></span><span className="quick-service-title">{s.title}</span><span className="quick-service-action">{s.cta}<span aria-hidden>→</span></span></Link></li>)}</ul>

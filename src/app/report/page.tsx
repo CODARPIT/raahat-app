@@ -3,8 +3,11 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Gauge } from "@/components/Gauge";
+import { ImageReviewPanel } from "@/components/ImageReviewPanel";
+import { EmergencyIcon } from "@/components/EmergencyActions";
 import { CATEGORY_LABEL, thumbUrl } from "@/lib/cld-url";
-import { REPORT_FOLDER, REPORT_TAG } from "@/lib/constants";
+import { REPORT_FOLDER, REPORT_TAG, REPORT_REFRESH_MS } from "@/lib/constants";
+import { currentImageReview } from "@/lib/image-review-state";
 import { downscale } from "@/lib/downscale";
 import { useI18n } from "@/components/LocaleProvider";
 import { fmt, storageLang } from "@/lib/i18n";
@@ -17,12 +20,19 @@ interface Upload {
   publicId: string;
   resourceType: "image" | "video";
 }
+type FiledReport = Report & { reviewReceipt?: string };
 
 type Loc = { lat: number; lng: number; accuracy?: number; source: "gps" | "map_pin" } | null;
 
 const CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
 const API_KEY = process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY;
 const MAX_BYTES = 40_000_000;
+const QUICK_HAZARDS = [
+  { id: "flood", label: "quickFlood", note: "Flooding" },
+  { id: "fire", label: "quickFire", note: "Fire or smoke" },
+  { id: "injured", label: "quickInjured", note: "Someone is trapped or injured" },
+  { id: "road", label: "quickRoad", note: "Road blocked" },
+] as const;
 
 /** Signed direct upload, so the camera opens in one tap instead of inside a widget. */
 async function uploadPhoto(body: Blob): Promise<Upload> {
@@ -49,7 +59,7 @@ async function uploadPhoto(body: Blob): Promise<Upload> {
   return { publicId: data.public_id, resourceType: data.resource_type === "video" ? "video" : "image" };
 }
 
-async function postReport(upload: Upload, meta: OutboxMeta): Promise<Report> {
+async function postReport(upload: Upload, meta: OutboxMeta): Promise<FiledReport> {
   const res = await fetch("/api/reports", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -57,7 +67,7 @@ async function postReport(upload: Upload, meta: OutboxMeta): Promise<Report> {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "The report didn't go through. Check your connection and send again.");
-  return data.report as Report;
+  return { ...data.report, reviewReceipt: data.reviewReceipt } as FiledReport;
 }
 
 export default function ReportPage() {
@@ -68,10 +78,12 @@ export default function ReportPage() {
   const [locState, setLocState] = useState<"idle" | "locating" | "found" | "failed" | "unknown">("idle");
   const [place, setPlace] = useState("");
   const [note, setNote] = useState("");
+  const [hazards, setHazards] = useState<string[]>([]);
+  const [showMap, setShowMap] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<Report | null>(null);
+  const [result, setResult] = useState<FiledReport | null>(null);
   // Offline support: a photo that couldn't upload yet, and reports saved on the phone.
   const [local, setLocal] = useState<{ blob: Blob; url: string } | null>(null);
   const [offlineNote, setOfflineNote] = useState(false);
@@ -80,6 +92,8 @@ export default function ReportPage() {
   const [flushing, setFlushing] = useState(false);
   const queuedRef = useRef<string | null>(null);
   const busyRef = useRef(false);
+  const sendingRef = useRef(false);
+  const locationRequest = useRef(0);
   queuedRef.current = queuedId;
 
   useEffect(() => {
@@ -137,21 +151,50 @@ export default function ReportPage() {
     };
   }, [flush]);
 
+  // The server owns the ten-second delay. This only watches the saved outcome.
+  const resultId = result?.publicId;
+  const reviewReceipt = result?.reviewReceipt;
+  const reviewStatus = result?.imageReview?.status;
+  useEffect(() => {
+    if (!resultId || !reviewReceipt || reviewStatus !== "pending") return;
+    const controller = new AbortController();
+    let checking = false;
+    async function refreshAssessment() {
+      if (checking) return;
+      checking = true;
+      try {
+        const response = await fetch("/api/reports/review", { cache: "no-store", signal: controller.signal,
+          headers: { Authorization: `Bearer ${reviewReceipt}` } });
+        if (!response.ok) throw new Error("Review unavailable");
+        const update = await response.json();
+        if (update.publicId === resultId) setResult((previous) => previous && previous.publicId === resultId ? { ...previous, ...update } : previous);
+      } catch {
+        if (!controller.signal.aborted) setResult((previous) => previous && previous.publicId === resultId
+          ? { ...previous, imageReview: currentImageReview(previous.imageReview) } : previous);
+      } finally { checking = false; }
+    }
+    const interval = setInterval(refreshAssessment, REPORT_REFRESH_MS);
+    return () => { clearInterval(interval); controller.abort(); };
+  }, [resultId, reviewReceipt, reviewStatus]);
+
   const locate = useCallback(() => {
+    const request = ++locationRequest.current;
     if (!("geolocation" in navigator)) return setLocState("failed");
     setLocState("locating");
     navigator.geolocation.getCurrentPosition(
       (p) => {
+        if (request !== locationRequest.current) return;
         setLoc({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy, source: "gps" });
         setLocState("found");
       },
-      () => setLocState("failed"),
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+      () => { if (request === locationRequest.current) setLocState("failed"); },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 },
     );
   }, []);
 
   useEffect(() => {
     locate();
+    return () => { locationRequest.current++; };
   }, [locate]);
 
   async function pick(e: React.ChangeEvent<HTMLInputElement>) {
@@ -178,27 +221,36 @@ export default function ReportPage() {
     }
   }
 
-  async function queue(meta: OutboxMeta) {
+  async function queue(meta: OutboxMeta, uploaded = upload) {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    await putItem({ id, createdAt: Date.now(), blob: upload ? null : local!.blob, upload, meta });
+    await putItem({ id, createdAt: Date.now(), blob: uploaded ? null : local!.blob, upload: uploaded, meta });
     setQueuedId(id);
     setWaiting((n) => n + 1);
   }
 
   async function send() {
+    if (sendingRef.current || uploading) return;
     setError(null);
     if (!upload && !local) return setError(t.needPhoto);
     // No location is fine: the report is never dropped, a coordinator pins it.
     const where = locState === "unknown" ? null : loc;
-    const meta: OutboxMeta = { lat: where?.lat ?? null, lng: where?.lng ?? null, locationSource: where?.source, place, note, lang };
+    const description = [...QUICK_HAZARDS.filter((hazard) => hazards.includes(hazard.id)).map((hazard) => hazard.note), note.trim()].filter(Boolean).join(". ").slice(0, 500);
+    const meta: OutboxMeta = { lat: where?.lat ?? null, lng: where?.lng ?? null, locationSource: where?.source, place, note: description, lang };
+    sendingRef.current = true;
     setSending(true);
+    let uploaded = upload;
     try {
-      if (!upload) await queue(meta); // the photo itself is still waiting for signal
-      else setResult(await online(() => postReport(upload, meta)));
+      // A server-side upload error is retried explicitly, never labelled "no signal".
+      if (!uploaded) {
+        uploaded = await online(() => uploadPhoto(local!.blob));
+        setUpload(uploaded);
+      }
+      setResult(await online(() => postReport(uploaded!, meta)));
     } catch (e) {
-      if (e instanceof OfflineError) await queue(meta);
+      if (e instanceof OfflineError) await queue(meta, uploaded);
       else setError((e as Error).message);
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
@@ -208,6 +260,8 @@ export default function ReportPage() {
     setLocal(null);
     setOfflineNote(false);
     setNote("");
+    setHazards([]);
+    setShowMap(false);
     setPlace("");
     setResult(null);
     setQueuedId(null);
@@ -222,6 +276,7 @@ export default function ReportPage() {
           <li aria-current="page">{nav.report}</li>
         </ol>
       </nav>
+      {(result || queuedId) && <p className="urgent-contact"><span>{t.urgentCallHint}</span><a href="tel:112"><EmergencyIcon kind="phone" size={20} />{t.urgentCall}</a></p>}
 
       {waiting > 0 && !queuedId && (
         <p className="outbox-banner" role="status">
@@ -276,91 +331,94 @@ export default function ReportPage() {
               </p>}
             </div>
           </div>
+          <ImageReviewPanel review={result.imageReview} showReason />
           <div className="preview" style={{ marginTop: 16 }}>
             <img src={thumbUrl(result, "normal", true)} alt="Your photo, with faces pixelated as responders and the public see it" />
           </div>
           <button className="btn" onClick={reset} style={{ marginTop: 8 }}>{t.another}</button>
         </section>
       ) : (
-        <>
-          <h1>{t.title}</h1>
-          <p className="lead">{t.lead}</p>
+        <form className="urgent-report-form" onSubmit={(event) => { event.preventDefault(); void send(); }}>
+          <header className="urgent-heading">
+            <h1>{t.urgentTitle}</h1>
+            <p>{t.urgentLead}</p>
+          </header>
 
-          <div className="field">
-            {upload ? (
-              <div className="preview">
-                <img src={thumbUrl(upload, "normal", true)} alt="Selected photo, faces pixelated" />
-              </div>
-            ) : local && !uploading ? (
-              <div className="preview">
-                <img src={local.url} alt="Selected photo, saved on this phone" />
-              </div>
-            ) : null}
-            {offlineNote && <p className="hint offline-note" role="status">{t.photoSavedOffline}</p>}
-            <div className="capture" aria-busy={uploading}>
-              {/* capture="environment" opens the rear camera directly on phones */}
-              <label className="btn btn-primary btn-capture" aria-disabled={uploading}>
-                {uploading ? t.uploading : upload || local ? t.retake : t.takePhoto}
-                <input type="file" accept="image/*" capture="environment" onChange={pick} disabled={uploading} />
+          <section className="urgent-photo" aria-labelledby="photo-step">
+            <h2 id="photo-step"><span className="urgent-step" aria-hidden>1</span>{t.urgentPhotoStep}</h2>
+            {local ? <div className="preview urgent-photo-preview"><img src={local.url} alt="" />
+              <span className="urgent-photo-status" role="status"><EmergencyIcon kind="check" size={18} />{uploading ? t.uploading : t.urgentPhotoReady}</span>
+            </div> : upload ? <div className="preview urgent-photo-preview"><img src={thumbUrl(upload, "normal", true)} alt="" /></div> : null}
+            <div className="capture urgent-capture" aria-busy={uploading}>
+              <label className="btn emergency-report-button btn-capture" aria-disabled={uploading || sending}>
+                <EmergencyIcon kind="camera" size={28} />{uploading ? t.uploading : upload || local ? t.retake : t.takePhoto}
+                <input type="file" accept="image/*" capture="environment" onChange={pick} disabled={uploading || sending} />
               </label>
-              <label className="btn" aria-disabled={uploading}>
+              <label className="btn" aria-disabled={uploading || sending}>
                 {t.gallery}
-                <input type="file" accept="image/*,video/*" onChange={pick} disabled={uploading} />
+                <input type="file" accept="image/*,video/*" onChange={pick} disabled={uploading || sending} />
               </label>
             </div>
-          </div>
+            {offlineNote && <p className="hint offline-note" role="status">{t.urgentOfflineHint}</p>}
+          </section>
 
-          <div className="field">
-            <span className="label">{t.location}</span>
-            <div className="loc-line">
-              <span>
-                {locState === "locating" && t.locating}
-                {locState === "found" && loc && (
-                  <>
-                    {t.locationFound}{" "}
-                    <span className="num">({loc.lat.toFixed(4)}, {loc.lng.toFixed(4)})</span>
-                  </>
-                )}
-                {locState === "failed" && !loc && t.locationFailed}
-                {locState === "failed" && loc && <span className="num">{loc.lat.toFixed(4)}, {loc.lng.toFixed(4)}</span>}
-                {locState === "unknown" && t.noLocationNote}
-              </span>
-              <span className="loc-actions">
-                {locState !== "locating" && (
-                  <button type="button" className="btn" onClick={locate}>{t.useLocation}</button>
-                )}
-                {locState !== "unknown" && locState !== "found" && (
-                  <button type="button" className="btn" onClick={() => setLocState("unknown")}>{t.dontKnow}</button>
-                )}
-              </span>
+          <section className="urgent-location" aria-label={t.location}>
+            <EmergencyIcon kind="location" />
+            <div aria-live="polite"><strong>{locState === "locating" ? t.locating : locState === "found" ? t.locationFound : t.urgentLocationOptional}</strong>
+              <p>{t.urgentNoTyping}</p>
             </div>
-            {locState === "failed" && (
-              <div style={{ height: 240, marginTop: 10, borderRadius: 12, overflow: "hidden", border: "1px solid var(--line)" }}>
-                <MapView pin={loc} onPick={(lat, lng) => setLoc({ lat, lng, source: "map_pin" })} />
+          </section>
+
+          <fieldset className="urgent-hazards">
+            <legend>{t.urgentQuickTitle}</legend>
+            <div>{QUICK_HAZARDS.map((hazard) => <button type="button" key={hazard.id} aria-pressed={hazards.includes(hazard.id)}
+              onClick={() => setHazards((previous) => previous.includes(hazard.id) ? previous.filter((id) => id !== hazard.id) : [...previous, hazard.id])}>
+              <span className="hazard-check" aria-hidden>{hazards.includes(hazard.id) && <EmergencyIcon kind="check" size={16} />}</span>{t[hazard.label]}
+            </button>)}</div>
+          </fieldset>
+
+          <details className="urgent-details">
+            <summary>{t.urgentDetails}</summary>
+            <div className="urgent-details-body">
+              <div className="field">
+                <span className="label">{t.location}</span>
+                {loc && locState !== "unknown" && <p className="hint num">{loc.lat.toFixed(4)}, {loc.lng.toFixed(4)}</p>}
+                <div className="loc-actions">
+                  <button type="button" className="btn" onClick={locate} disabled={locState === "locating"}>{t.useLocation}</button>
+                  <button type="button" className="btn" aria-expanded={showMap} onClick={() => setShowMap((previous) => !previous)}>{t.urgentChooseMap}</button>
+                  <button type="button" className="btn" onClick={() => { locationRequest.current++; setLocState("unknown"); setShowMap(false); }}>{t.urgentSkipLocation}</button>
+                </div>
+                {showMap && <><div className="urgent-picker">
+                  <MapView pin={locState === "unknown" ? null : loc} regionalOverview onPick={(lat, lng) => {
+                    locationRequest.current++;
+                    setLoc({ lat, lng, source: "map_pin" }); setLocState("found");
+                  }} />
+                </div><p className="hint">{t.tapMap}</p></>}
               </div>
-            )}
-            {locState === "failed" && <p className="hint">{t.tapMap}</p>}
-          </div>
-
-          {(locState === "unknown" || (locState === "failed" && !loc)) && (
-            <div className="field">
-              <label htmlFor="place">{t.describePlace}</label>
-              <input id="place" type="text" value={place} onChange={(e) => setPlace(e.target.value)} placeholder={t.describePlaceholder} maxLength={200} />
-              <p className="hint">{t.describePlaceHint}</p>
+              <div className="field">
+                <label htmlFor="place">{t.describePlace}</label>
+                <input id="place" type="text" value={place} onChange={(e) => setPlace(e.target.value)} placeholder={t.describePlaceholder} maxLength={200} />
+                <p className="hint">{t.describePlaceHint}</p>
+              </div>
+              <div className="field">
+                <label htmlFor="note">{t.noteLabel}</label>
+                <textarea id="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t.notePlaceholder} maxLength={500} />
+              </div>
             </div>
-          )}
-
-          <div className="field">
-            <label htmlFor="note">{t.noteLabel}</label>
-            <textarea id="note" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t.notePlaceholder} maxLength={500} />
-          </div>
+          </details>
 
           {error && <p className="error" role="alert">{error}</p>}
-          <button type="button" className="btn btn-primary" style={{ width: "100%", minHeight: 56, fontSize: 19 }} onClick={send} disabled={sending}>
-            {sending ? t.sending : t.send}
-          </button>
-          <p className="safety">{t.safety}</p>
-        </>
+          <div className="urgent-send-space" aria-hidden />
+          <div className="urgent-send-bar">
+            <p>{!upload && !local ? t.needPhoto : t.urgentSendStep}</p>
+            <div>
+              <a className="btn emergency-call-button" href="tel:112"><EmergencyIcon kind="phone" size={22} />{t.urgentCall}</a>
+              <button type="submit" className="btn emergency-report-button" disabled={sending || uploading || (!upload && !local)}>
+                {sending ? t.sending : uploading ? t.uploading : offlineNote ? t.urgentSave : t.send}<span aria-hidden>→</span>
+              </button>
+            </div>
+          </div>
+        </form>
       )}
     </main>
   );
