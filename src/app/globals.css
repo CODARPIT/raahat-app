@@ -749,3 +749,29 @@ body > header, body > nav, body > footer, body > .page, body > .access-bar, body
   .verdict { gap: 12px; padding: 14px; }
   .verdict-icon { width: 40px; height: 40px; font-size: 1.25rem; }
 }
+
+/* Dispatch board (/respond/dispatch) */
+.dispatch { max-width: var(--maxw); margin: 0 auto; padding: 24px var(--gutter) 56px; }
+.dispatch-head { border-bottom: 3px solid var(--chrome); padding-bottom: 14px; margin-bottom: 18px; }
+.dispatch-head h1 { margin: 4px 0 6px; font-size: 2rem; }
+.dispatch-head .hint { max-width: 80ch; }
+.dispatch-modes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.dispatch-modes .btn[aria-pressed="true"] { background: var(--chrome); color: #fff; border-color: var(--chrome); }
+.dispatch-step { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; margin-bottom: 16px; }
+.dispatch-step p { margin: 0 0 10px; font-size: 1.0625rem; }
+.dispatch-step-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.dispatch-board { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.dispatch-map { flex: 1 1 460px; min-width: 0; margin: 0; }
+.dispatch-map svg { width: 100%; height: auto; display: block; }
+.dispatch-map figcaption { font-size: 0.8125rem; color: var(--ink-soft); margin-top: 6px; }
+.dispatch-map-bg { fill: var(--paper); stroke: var(--line); }
+.dispatch-centre { fill: var(--chrome); stroke: #fff; stroke-width: 2; }
+.dispatch-label { font-size: 15px; font-weight: 700; fill: var(--ink); }
+.dispatch-sub { font-size: 12px; fill: var(--ink-soft); }
+.dispatch-tables { flex: 1 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 20px; overflow-x: auto; }
+.dispatch-table { width: 100%; border-collapse: collapse; background: var(--paper); border: 1px solid var(--line); font-size: 0.9375rem; }
+.dispatch-table caption { text-align: left; font-weight: 800; font-size: 1.0625rem; padding: 0 0 8px; }
+.dispatch-table th, .dispatch-table td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.dispatch-table thead th { font-size: 0.8125rem; color: var(--ink-soft); }
+.dispatch-moved { background: rgb(233 132 34 / 0.14); }
+.dispatch-tag { display: inline-block; margin-left: 6px; font-size: 0.75rem; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: #fde8eb; color: #9b0d24; }

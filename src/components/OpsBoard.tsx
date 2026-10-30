@@ -301,6 +301,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
         {mode === "responder" && (
           <div className="ops-tools">
             <a href="/respond/sitrep" className="tool-link">Situation report</a>
+            <a href="/respond/dispatch" className="tool-link">Dispatch board</a>
             <a href="/api/reports/export" className="tool-link">Download CSV</a>
           </div>
         )}
