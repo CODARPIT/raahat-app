@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { PortalBanner } from "@/components/PortalBanner";
+import { ExternalArrow } from "@/components/ExternalArrow";
 import { fmt, LOCALES } from "@/lib/i18n";
 import { getI18n } from "@/lib/locale";
 import { listReports } from "@/lib/reports";
@@ -8,319 +10,133 @@ import { DICTS } from "@/locales";
 
 export const revalidate = 30;
 
-const BANDS: { sev: Severity; key: "bandCritical" | "bandHigh" | "bandModerate" | "bandLow"; color: string }[] = [
-  { sev: "critical", key: "bandCritical", color: "var(--sev-critical)" },
-  { sev: "high", key: "bandHigh", color: "var(--sev-high)" },
-  { sev: "moderate", key: "bandModerate", color: "var(--sev-moderate)" },
-  { sev: "low", key: "bandLow", color: "var(--sev-low)" },
-];
-
-// Simple line icons, drawn inline so the page needs no icon font or image requests on 2G.
 const ICON = {
   camera: "M4 8h3l2-3h6l2 3h3v11H4z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
   chat: "M4 5h16v11H9l-5 4z M8 9h8 M8 12h5",
   map: "M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14 M15 6v14",
   shield: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z M8.5 12l2.5 2.5 4.5-5",
-  ai: "M5 5h14v14H5z M9 9h6v6H9z M9 2v3 M15 2v3 M9 19v3 M15 19v3 M2 9h3 M2 15h3 M19 9h3 M19 15h3",
-  merge: "M6 4v6a6 6 0 0 0 6 6h6 M18 16l-3-3 M18 16l-3 3 M6 20v-4",
-  send: "M4 12l16-8-6 16-3-7z",
-  blur: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16z M8 10h.01 M16 10h.01 M8 15c2.5 2 5.5 2 8 0",
-  pin: "M12 21s-7-6.5-7-12a7 7 0 0 1 14 0c0 5.5-7 12-7 12z M12 11.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
-  signal: "M4 20v-3 M9 20v-7 M14 20v-11 M19 20V4",
   check: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z M20 20l-4-4 M8 11l2 2 4-4",
-  cross: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M9 9l6 6 M15 9l-6 6",
   book: "M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z M4 19V5 M9 7h6",
+  flood: "M3 8q3-4 6 0t6 0 6 0M3 14q3-4 6 0t6 0 6 0M3 20q3-4 6 0t6 0 6 0",
+  earthquake: "M3 17h7l-3-5h5l-2-5h4l-1-4M14 17h7M3 21h18",
+  cyclone: "M9 4c9-3 15 9 7 13M15 20C6 23 0 11 8 7M16 9c4 6-5 11-8 5M8 12a4 4 0 1 0 8 0 4 4 0 0 0-8 0",
+  fire: "M13 3c1 5-3 6-3 9-2-1-2-3-2-4-3 3-4 6-3 9a7.5 7.5 0 0 0 14-1c1-4-2-7-6-13z M12 14c-4 4-1 8 2 6 2-2-1-3-2-6z",
 };
 
 function Icon({ d }: { d: string }) {
-  return (
-    <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d={d} />
-    </svg>
-  );
+  return <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={d} /></svg>;
 }
 
+const OFFICIAL = [
+  { name: "NDEM", full: "National Database for Emergency Management", domain: "ndem.nrsc.gov.in", href: "https://ndem.nrsc.gov.in/#/" },
+  { name: "NDMA", full: "National Disaster Management Authority", domain: "ndma.gov.in", href: "https://ndma.gov.in/" },
+  { name: "SACHET", full: "National Disaster Alert Portal", domain: "sachet.ndma.gov.in", href: "https://sachet.ndma.gov.in/" },
+  { name: "IMD", full: "India Meteorological Department", domain: "mausam.imd.gov.in", href: "https://mausam.imd.gov.in/" },
+];
+
 export default async function Home() {
-  const { locale, t: { home: t } } = await getI18n();
-  // English readers also see the Hindi heading, as on bilingual government portals.
+  const { locale, t: dict } = await getI18n();
+  const t = dict.home;
   const hi = locale === "en" ? DICTS.hi.home : null;
-  const Alt = ({ text }: { text: string }) => (hi ? <span lang="hi"> · {text}</span> : null);
-  // Shown once the bot is set up (TELEGRAM_BOT_USERNAME, see README).
   const bot = telegram.username ? `https://t.me/${telegram.username}` : null;
-  const instagram = (process.env.INSTAGRAM_HANDLE ?? "").replace(/^@/, "");
-  let counts: Record<Severity, number> = { critical: 0, high: 0, moderate: 0, low: 0 };
+  const counts: Record<Severity, number> = { critical: 0, high: 0, moderate: 0, low: 0 };
   let live = true;
   try {
     const open = (await listReports()).filter((r) => !r.duplicateOf && r.status !== "resolved" && r.status !== "rejected");
     for (const r of open) counts[r.severity]++;
-  } catch {
-    counts = { critical: 0, high: 0, moderate: 0, low: 0 };
-    live = false;
-  }
-  const total = counts.critical + counts.high + counts.moderate + counts.low;
+  } catch { live = false; }
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
   const updated = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Kolkata" });
-
   const services = [
-    { icon: ICON.camera, title: t.sReportT, alt: hi?.sReportT, text: t.sReport, href: "/report", cta: t.sReportC },
-    { icon: ICON.chat, title: t.sTelegramT, alt: hi?.sTelegramT, text: t.sTelegram, href: bot ? "#telegram" : "/report", cta: bot ? t.sTelegramC : t.sTelegramSoon },
-    { icon: ICON.check, title: t.sCheckT, alt: hi?.sCheckT, text: t.sCheck, href: "/check", cta: t.sCheckC },
-    { icon: ICON.map, title: t.sMapT, alt: hi?.sMapT, text: t.sMap, href: "/map", cta: t.sMapC },
-    { icon: ICON.book, title: t.sSafetyT, alt: hi?.sSafetyT, text: t.sSafety, href: "/safety", cta: t.sSafetyC },
-    { icon: ICON.shield, title: t.sControlT, alt: hi?.sControlT, text: t.sControl, href: "/respond", cta: t.sControlC },
+    { icon: ICON.camera, title: t.sReportT, text: t.sReport, href: "/report", cta: t.sReportC },
+    { icon: ICON.map, title: t.sMapT, text: t.sMap, href: "/map", cta: t.sMapC },
+    { icon: ICON.check, title: t.sCheckT, text: t.sCheck, href: "/check", cta: t.sCheckC },
+    { icon: ICON.shield, title: t.sControlT, text: t.sControl, href: "/respond", cta: t.sControlC },
+    { icon: ICON.book, title: t.sSafetyT, text: t.sSafety, href: "/safety", cta: t.sSafetyC },
+    { icon: ICON.chat, title: t.sTelegramT, text: t.sTelegram, href: bot ? "#telegram" : "/help", cta: bot ? t.sTelegramC : t.sTelegramSoon },
   ];
+  const bands = [
+    { sev: "critical", key: "bandCritical" }, { sev: "high", key: "bandHigh" },
+    { sev: "moderate", key: "bandModerate" }, { sev: "low", key: "bandLow" },
+  ] as const;
 
   return (
-    <main className="home">
-      {/* ── Banner ─────────────────────────────────────────── */}
-      <section className="banner">
-        <div className="banner-inner">
-          <div className="banner-copy">
-            <p className="eyebrow">{t.eyebrow}<Alt text={hi?.eyebrow ?? ""} /></p>
-            <h1>{t.title}</h1>
-            {hi && <p className="banner-hi" lang="hi">{hi.title}</p>}
-            <p className="lead">{t.lead}</p>
-            <div className="actions">
-              <Link className="btn btn-primary btn-lg" href="/report">{t.ctaReport}</Link>
-              <Link className="btn btn-lg btn-on-dark" href="/map">{t.ctaMap}</Link>
-            </div>
-          </div>
+    <main className="home portal-home">
+      <div className="portal-container">
+        <div className="portal-context">
+          <p><Link href="/">{dict.nav.home}</Link><span aria-hidden> / </span>{t.eyebrow}</p>
+          <span className={`live-dot${live ? "" : " off"}`}>{live ? fmt(t.updated, { time: updated }) : t.liveOff}</span>
+        </div>
+        <div className="portal-notice" role="note">
+          <span className="portal-notice-tag">{t.noticeTag}</span>
+          <p>{t.notice}</p>
+          <a href="tel:112" aria-label={`${dict.access.emergency}: 112`}>112 <ExternalArrow /></a>
+        </div>
 
-          <aside className="situation" aria-labelledby="sit-h">
-            <div className="situation-head">
-              <h2 id="sit-h">{t.live}</h2>
-              <span className={`live-dot${live ? "" : " off"}`}>{live ? fmt(t.updated, { time: updated }) : t.liveOff}</span>
-            </div>
-            <div className="staff">
-              <div className="staff-pole" aria-hidden>
-                {BANDS.map((b) => (
-                  <div key={b.sev} style={{ "--c": b.color } as React.CSSProperties} />
-                ))}
-              </div>
-              <div className="staff-marks">
-                {BANDS.map((b) => (
-                  <div key={b.sev}>
-                    <strong className="num" style={{ color: b.color }}>{counts[b.sev]}</strong>
-                    <span>{t[b.key]}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <p className="situation-foot">
-              <strong className="num">{total}</strong> {t.openReports} <Link href="/map">{t.openMap} →</Link>
-            </p>
+        <div className="portal-workspace">
+          <aside className="portal-panel portal-services" aria-labelledby="services-h">
+            <h2 className="portal-panel-title" id="services-h">{t.services}</h2>
+            <ul>{services.map((s) => <li key={s.title}><Link href={s.href}><Icon d={s.icon} /><span>{s.title}</span><span aria-hidden>›</span></Link></li>)}</ul>
+            <Link className="portal-help" href="/help"><span aria-hidden>?</span>{dict.nav.help} <span aria-hidden>→</span></Link>
+          </aside>
+          <PortalBanner label={t.services} slides={[
+            { tab: dict.nav.home, title: t.title, text: t.lead, action: t.ctaReport, href: "/report" },
+            { tab: dict.nav.map, title: t.sMapT, text: t.sMap, action: t.sMapC, href: "/map" },
+            { tab: dict.nav.check, title: t.fcTitle, text: t.sCheck, action: t.fcCheck, href: "/check" },
+          ]} />
+          <aside className="portal-panel portal-situation" aria-labelledby="situation-h">
+            <h2 className="portal-panel-title" id="situation-h">{t.live}<Link href="/map" aria-label={t.openMap}><ExternalArrow /></Link></h2>
+            <div className="portal-total"><strong className="num">{live ? total : "—"}</strong><span>{t.openReportsLabel}</span></div>
+            <dl className="portal-counts">{bands.map((b) => <div key={b.sev} data-severity={b.sev}>
+              <dt><span className="portal-severity-dot" aria-hidden />{dict.severity[b.sev]}</dt>
+              <dd className="num">{live ? counts[b.sev] : "—"}</dd>
+            </div>)}</dl>
+            <p className="portal-status"><span className={`live-dot${live ? "" : " off"}`}>{live ? fmt(t.updated, { time: updated }) : t.liveOff}</span></p>
           </aside>
         </div>
-      </section>
 
-      {/* ── Notice ─────────────────────────────────────────── */}
-      <div className="notice" role="note">
-        <div className="notice-inner">
-          <span className="notice-tag">{t.noticeTag}</span>
-          <p>
-            {t.notice}
-            {hi && <> <span lang="hi">{hi.notice.split("।")[0]}।</span></>}
-          </p>
+        <div className="portal-capabilities">
+          {[{ n: "14", label: t.stat1 }, { n: "2G", label: t.priv4T.replace(/[:：]$/u, "") }, { n: String(LOCALES.length), label: t.stat4 }, { n: "112", label: dict.access.emergency }].map((item) => <div key={item.n}><strong className="num">{item.n}</strong><span>{item.label}</span></div>)}
+        </div>
+
+        <div className="portal-information">
+          <section className="portal-panel portal-about" aria-labelledby="about-h">
+            <h2 className="portal-panel-title" id="about-h">{dict.footer.about}{hi && <span lang="hi">राहत के बारे में</span>}</h2>
+            <div className="portal-panel-body"><p>{dict.footer.aboutText}</p><p className="portal-about-note">{t.privLead}</p><Link className="portal-text-link" href="#how">{t.how} <span aria-hidden>→</span></Link></div>
+          </section>
+          <section className="portal-panel portal-advisories" aria-labelledby="advisories-h">
+            <h2 className="portal-panel-title" id="advisories-h">{t.advTitle}<Link href="/safety" aria-label={t.sSafetyC}><ExternalArrow /></Link></h2>
+            <ul>{[
+              { id: "flood", title: t.advFlood, tip: t.advFloodTip },
+              { id: "earthquake", title: t.advQuake, tip: t.advQuakeTip },
+              { id: "cyclone", title: t.advCyclone, tip: t.advCycloneTip },
+              { id: "fire", title: t.advFire, tip: t.advFireTip },
+            ].map((a) => <li key={a.id}><Link href={`/safety#${a.id}`}><span className={`hazard-symbol hazard-${a.id}`} aria-hidden><Icon d={ICON[a.id as "flood" | "earthquake" | "cyclone" | "fire"]} /></span><span><strong>{a.title}</strong><span>{a.tip}</span></span><span aria-hidden>›</span></Link></li>)}</ul>
+          </section>
+          <section className="portal-panel portal-official" aria-labelledby="official-h">
+            <h2 className="portal-panel-title" id="official-h">{t.relTitle}</h2>
+            <ul lang="en">{OFFICIAL.map((site) => <li key={site.name}><a href={site.href} target="_blank" rel="noreferrer"><span className="agency-initial" aria-hidden>{site.name.slice(0, 1)}</span><span><strong>{site.name}</strong><span>{site.full}</span><small>{site.domain}</small></span><ExternalArrow /></a></li>)}</ul>
+            <p className="portal-official-note">{t.relNote}</p>
+          </section>
         </div>
       </div>
 
-      {/* ── Services ───────────────────────────────────────── */}
-      <section className="section" aria-labelledby="svc-h">
-        <div className="section-inner">
-          <h2 id="svc-h" className="section-title">{t.services}<Alt text={hi?.services ?? ""} /></h2>
-          <ul className="services">
-            {services.map((s) => (
-              <li key={s.href + s.title}>
-                <Link href={s.href} className="service">
-                  <span className="service-icon"><Icon d={s.icon} /></span>
-                  <span className="service-title">{s.title}</span>
-                  {s.alt && <span className="service-hi" lang="hi">{s.alt}</span>}
-                  <span className="service-text">{s.text}</span>
-                  <span className="service-cta">{s.cta} <span aria-hidden>→</span></span>
-                </Link>
-              </li>
-            ))}
-          </ul>
+      <section className="portal-process" id="how" aria-labelledby="how-h">
+        <div className="portal-container">
+          <div className="portal-section-heading"><div><p className="eyebrow">RAAHAT / राहत</p><h2 id="how-h">{t.how}</h2></div><Link href="/report" className="portal-text-link">{t.ctaReport} →</Link></div>
+          <ol>{[
+            { title: t.how1T, text: t.how1 }, { title: t.how2T, text: t.how2 },
+            { title: t.how3T, text: t.how3 }, { title: t.how4T, text: t.how4 },
+          ].map((step, i) => <li key={step.title}><span className="portal-step-number" aria-hidden>{String(i + 1).padStart(2, "0")}</span><h3>{step.title}</h3><p>{step.text}</p></li>)}</ol>
         </div>
       </section>
-
-      {/* ── Impact numbers ─────────────────────────────────── */}
-      <section className="stats" aria-label="Raahat at a glance">
-        <div className="section-inner stats-grid">
-          <div><strong className="num">14</strong><span>{t.stat1}</span></div>
-          <div><strong className="num">&lt; 1 min</strong><span>{t.stat2}</span></div>
-          <div><strong className="num">98%</strong><span>{t.stat3}</span></div>
-          <div><strong className="num">{LOCALES.length}</strong><span>{t.stat4}</span></div>
-        </div>
-      </section>
-
-      {/* ── How it works ───────────────────────────────────── */}
-      <section className="section" id="how" aria-labelledby="how-h">
-        <div className="section-inner">
-          <h2 id="how-h" className="section-title">{t.how}<Alt text={hi?.how ?? ""} /></h2>
-          <ol className="steps">
-            <li>
-              <span className="step-icon"><Icon d={ICON.send} /></span>
-              <h3>{t.how1T}</h3>
-              <p>{t.how1}</p>
-            </li>
-            <li>
-              <span className="step-icon"><Icon d={ICON.ai} /></span>
-              <h3>{t.how2T}</h3>
-              <p>{t.how2}</p>
-            </li>
-            <li>
-              <span className="step-icon"><Icon d={ICON.merge} /></span>
-              <h3>{t.how3T}</h3>
-              <p>{t.how3}</p>
-            </li>
-            <li>
-              <span className="step-icon"><Icon d={ICON.pin} /></span>
-              <h3>{t.how4T}</h3>
-              <p>{t.how4}</p>
-            </li>
-          </ol>
-        </div>
-      </section>
-
-      {/* ── Fact check ─────────────────────────────────────── */}
-      <section className="section section-alt" id="fact-check" aria-labelledby="fc-h">
-        <div className="section-inner two-col">
-          <div>
-            <h2 id="fc-h" className="section-title">{t.fcTitle}<Alt text={hi?.fcTitle ?? ""} /></h2>
-            <p className="section-lead">{t.fcLead}</p>
-            <ul className="checks">
-              <li><Icon d={ICON.check} /><span><strong>{t.fc1T}</strong> {t.fc1}</span></li>
-              <li><Icon d={ICON.cross} /><span><strong>{t.fc2T}</strong> {t.fc2}</span></li>
-              <li><Icon d={ICON.shield} /><span><strong>{t.fc3T}</strong> {t.fc3}</span></li>
-            </ul>
-            <div className="actions">
-              <Link className="btn btn-primary btn-lg" href="/check">{t.fcCheck}</Link>
-              {instagram && (
-                <a className="btn btn-lg" href={`https://www.instagram.com/${instagram}/`} target="_blank" rel="noreferrer" aria-label={`Follow @${instagram} on Instagram`}>@{instagram} on Instagram</a>
-              )}
-            </div>
-          </div>
-          <figure className="card-sample">
-            <div className="card-sample-img" role="img" aria-label="Example fact-check card: a green Verified by Raahat band above a flood photo, with the date and a check link">
-              <span className="card-band">VERIFIED BY RAAHAT</span>
-              <span className="card-text">
-                <span className="card-what">Flood: road under knee-deep water</span>
-                <span className="card-when">Reported 29 Oct 2026, 2:15 pm IST, 4 reports</span>
-                <span className="card-link">Check it at raahat-kappa.vercel.app/v/…</span>
-              </span>
-            </div>
-            <figcaption>{t.fcCaption}</figcaption>
-          </figure>
-        </div>
-      </section>
-
-      {/* ── Telegram ───────────────────────────────────────── */}
-      {bot && (
-        <section className="section" id="telegram" aria-labelledby="tg-h">
-          <div className="section-inner">
-            <h2 id="tg-h" className="section-title">{t.tgTitle}<Alt text={hi?.tgTitle ?? ""} /></h2>
-            <p className="section-lead">{t.tgLead}</p>
-            <ol className="steps steps-numbered">
-              <li>
-                <h3>{t.tg1T}</h3>
-                <p><a href={bot}>t.me/{telegram.username}</a>, {t.tg1}</p>
-              </li>
-              <li>
-                <h3>{t.tg2T}</h3>
-                <p>{t.tg2}</p>
-              </li>
-              <li>
-                <h3>{t.tg3T}</h3>
-                <p>{t.tg3}</p>
-              </li>
-              <li>
-                <h3>{t.tg4T}</h3>
-                <p>{t.tg4}</p>
-              </li>
-            </ol>
-            <p className="hint">{t.tgForward}</p>
-            <a className="btn btn-primary btn-lg" href={bot}>{t.tgOpen} @{telegram.username}</a>
-          </div>
+      <div className="portal-container portal-bottom">
+        <section className="portal-panel" id="privacy" aria-labelledby="privacy-h">
+          <h2 className="portal-panel-title" id="privacy-h">{t.privTitle}</h2>
+          <ul className="portal-privacy">{[{ title: t.priv1T, text: t.priv1 }, { title: t.priv2T, text: t.priv2 }, { title: t.priv3T, text: t.priv3 }].map((item) => <li key={item.title}><Icon d={ICON.shield} /><span><strong>{item.title}</strong><span>{item.text}</span></span></li>)}</ul>
         </section>
-      )}
-
-      {/* ── Privacy and trust ──────────────────────────────── */}
-      <section className="section" id="privacy" aria-labelledby="priv-h">
-        <div className="section-inner two-col">
-          <div>
-            <h2 id="priv-h" className="section-title">{t.privTitle}</h2>
-            <p className="section-lead">{t.privLead}</p>
-          </div>
-          <ul className="checks">
-            <li><Icon d={ICON.blur} /><span><strong>{t.priv1T}</strong> {t.priv1}</span></li>
-            <li><Icon d={ICON.pin} /><span><strong>{t.priv2T}</strong> {t.priv2}</span></li>
-            <li><Icon d={ICON.shield} /><span><strong>{t.priv3T}</strong> {t.priv3}</span></li>
-            <li><Icon d={ICON.signal} /><span><strong>{t.priv4T}</strong> {t.priv4}</span></li>
-          </ul>
-        </div>
-      </section>
-
-      {/* ── Safety advisories ──────────────────────────────── */}
-      <section className="section" aria-labelledby="adv-h">
-        <div className="section-inner">
-          <h2 id="adv-h" className="section-title">{t.advTitle}<Alt text={hi?.advTitle ?? ""} /></h2>
-          <p className="section-lead">{t.advLead}</p>
-          <ul className="advisories">
-            {[
-              { id: "flood", title: t.advFlood, alt: hi?.advFlood, tip: t.advFloodTip },
-              { id: "earthquake", title: t.advQuake, alt: hi?.advQuake, tip: t.advQuakeTip },
-              { id: "cyclone", title: t.advCyclone, alt: hi?.advCyclone, tip: t.advCycloneTip },
-              { id: "fire", title: t.advFire, alt: hi?.advFire, tip: t.advFireTip },
-            ].map((a) => (
-              <li key={a.id}>
-                <Link href={`/safety#${a.id}`} className="advisory">
-                  <span className="advisory-title">{a.title}{a.alt && <span lang="hi"> · {a.alt}</span>}</span>
-                  <span className="advisory-tip">{a.tip}</span>
-                  <span className="service-cta">{t.advRead} <span aria-hidden>→</span></span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      {/* ── Related official links ─────────────────────────── */}
-      <section className="related" aria-labelledby="rel-h">
-        <div className="section-inner">
-          <h2 id="rel-h">{t.relTitle}</h2>
-          <ul lang="en">
-            <li><a href="https://ndma.gov.in" target="_blank" rel="noreferrer">National Disaster Management Authority<span>ndma.gov.in</span></a></li>
-            <li><a href="https://mausam.imd.gov.in" target="_blank" rel="noreferrer">India Meteorological Department<span>mausam.imd.gov.in</span></a></li>
-            <li><a href="https://sachet.ndma.gov.in" target="_blank" rel="noreferrer">Sachet: official disaster alerts<span>sachet.ndma.gov.in</span></a></li>
-            <li><a href="https://ndrf.gov.in" target="_blank" rel="noreferrer">National Disaster Response Force<span>ndrf.gov.in</span></a></li>
-          </ul>
-          <p className="hint">{t.relNote}</p>
-        </div>
-      </section>
-
-      {/* ── Who it's for ───────────────────────────────────── */}
-      <section className="section section-alt" aria-labelledby="who-h">
-        <div className="section-inner">
-          <h2 id="who-h" className="section-title">{t.whoTitle}</h2>
-          <div className="audience">
-            <div>
-              <h3>{t.who1T}</h3>
-              <p>{t.who1}</p>
-              <Link href="/report">{t.who1L} →</Link>
-            </div>
-            <div>
-              <h3>{t.who2T}</h3>
-              <p>{t.who2}</p>
-              <Link href="/respond">{t.who2L} →</Link>
-            </div>
-            <div>
-              <h3>{t.who3T}</h3>
-              <p>{t.who3}</p>
-              <Link href="/map">{t.who3L} →</Link>
-            </div>
-          </div>
-        </div>
-      </section>
+        {bot && <section className="portal-panel" id="telegram" aria-labelledby="telegram-h"><h2 className="portal-panel-title" id="telegram-h">{t.tgTitle}</h2><div className="portal-panel-body"><p>{t.tgLead}</p><p>{t.tg2T}. {t.tg3T}. {t.tg4T}.</p><a className="btn btn-primary" href={bot}>{t.tgOpen} @{telegram.username} ↗</a><p className="hint">{t.tgForward}</p></div></section>}
+      </div>
     </main>
   );
 }

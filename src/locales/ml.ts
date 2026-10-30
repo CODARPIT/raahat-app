@@ -65,6 +65,7 @@ const ml: Dict = {
     live: "തത്സമയ സ്ഥിതി",
     updated: "{time} IST-ന് പുതുക്കിയത്",
     liveOff: "തത്സമയ വിവരങ്ങൾ ലഭ്യമല്ല",
+    openReportsLabel: "സജീവ റിപ്പോർട്ടുകൾ",
     bandCritical: "അതിഗുരുതരം: ജീവന് ഭീഷണി",
     bandHigh: "ഗുരുതരം: അടിയന്തര സഹായം വേണം",
     bandModerate: "മിതം: നാശനഷ്ടം, ആരും അപകടത്തിലല്ല",

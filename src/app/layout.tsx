@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/next";
-import { Mukta } from "next/font/google";
 import Link from "next/link";
 import { AccessBar } from "@/components/AccessBar";
 import { Seal } from "@/components/Seal";
@@ -11,15 +10,7 @@ import { A11Y_KEY, SITE_URL, THEME_KEY } from "@/lib/constants";
 import { getI18n } from "@/lib/locale";
 import { DICTS } from "@/locales";
 import "./globals.css";
-
-// Mukta (Ek Type, Mumbai) carries Latin and Devanagari in one family,
-// so Hindi and English reports sit on the same baseline.
-const mukta = Mukta({
-  subsets: ["latin", "devanagari"],
-  weight: ["400", "500", "700", "800"],
-  variable: "--font-mukta",
-  display: "swap",
-});
+import "./portal.css";
 
 const DESCRIPTION = "Citizen disaster reports, triaged by Cloudinary AI and delivered to responders on any network.";
 
@@ -42,7 +33,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // The second line under the name: Hindi for English readers, English for everyone else.
   const portalAlt = locale === "en" ? DICTS.hi.header.portal : locale === "hi" ? null : DICTS.en.header.portal;
   return (
-    <html lang={locale} className={mukta.variable} suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: PREFS_SCRIPT }} />
       </head>
@@ -54,16 +45,21 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <Link href="/" className="wordmark" aria-label={`Raahat, ${t.header.portal}: ${t.nav.home}`}>
             <Seal size={72} title="" id="seal-header" />
             <span className="wordmark-text">
-              <span className="wordmark-hi" lang="hi">राहत</span>
-              <span className="wordmark-name">RAAHAT</span>
+              <span className="wordmark-title"><span className="wordmark-hi" lang="hi">राहत</span><span className="wordmark-divider" aria-hidden /><span className="wordmark-name">RAAHAT</span></span>
               <span className="wordmark-sub">{t.header.portal}</span>
               {portalAlt && <span className="wordmark-sub-hi" lang={locale === "en" ? "hi" : "en"}>{portalAlt}</span>}
             </span>
           </Link>
+          <div className="header-contact">
+          <span className="header-identity" lang={locale === "hi" ? "hi" : "en"}>{locale === "hi" ? "नागरिक पहल · आपदा सहायता" : "A citizen initiative for disaster assistance"}</span>
+          <div className="header-helplines">
           <a href="tel:112" className="header-sos">
             <span className="header-sos-label">{t.header.inDanger}</span>
             <span className="header-sos-num num">112</span>
           </a>
+          <a href="tel:1078" className="header-disaster"><span>{t.access.disasterHelpline}</span><strong className="num">1078</strong></a>
+          </div>
+          </div>
         </header>
         <SiteNav />
         <div id="main" tabIndex={-1} className="page">
