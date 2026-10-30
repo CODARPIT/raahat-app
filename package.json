@@ -2,7 +2,7 @@
   "name": "raahat",
   "version": "0.1.0",
   "private": true,
-  "description": "Raahat: citizen disaster reports, triaged by Cloudinary AI, delivered to responders on any network.",
+  "description": "Raahat Shield: prove a morphed photo is fake, build a police-ready evidence pack, and protect future photos.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

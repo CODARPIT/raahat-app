@@ -80,9 +80,11 @@ export function AccessBar() {
           <a href="/sitemap">{t.sitemap}</a>
         </nav>
         <p className="access-help">
-          <span className="help-item">{t.emergency} <a href="tel:112" className="num">112</a></span>
+          <span className="help-item">Cyber crime <a href="tel:1930" className="num">1930</a></span>
           <span className="sep" aria-hidden>·</span>
-          <span className="help-item">{t.disasterHelpline} <a href="tel:1078" className="num">1078</a></span>
+          <span className="help-item">Women helpline <a href="tel:181" className="num">181</a></span>
+          <span className="sep" aria-hidden>·</span>
+          <span className="help-item">{t.emergency} <a href="tel:112" className="num">112</a></span>
         </p>
         <label className="lang-pick">
           <span aria-hidden>अ/A</span>

@@ -1,68 +1,71 @@
 import Link from "next/link";
-import type { Dict } from "@/locales/en";
 import { LAST_REVIEWED } from "./InfoPage";
-import { Seal } from "./Seal";
+import { ShieldMark } from "./ShieldMark";
 
-// Public emergency numbers in India. 112 is the single emergency number;
-// 1078 is the NDMA disaster helpline; 1070 reaches the state emergency operations centre.
+// Helplines for women facing online abuse in India. 1930 is the national cyber crime
+// helpline; 181 the women helpline; 7827170170 the National Commission for Women.
 const HELPLINES = [
-  { number: "112", key: "h112" },
-  { number: "1078", key: "h1078" },
-  { number: "1070", key: "h1070" },
-  { number: "108", key: "h108" },
-] as const;
+  { number: "1930", label: "Cyber crime helpline (fraud and blackmail)" },
+  { number: "181", label: "Women helpline" },
+  { number: "7827170170", label: "National Commission for Women (WhatsApp)" },
+  { number: "112", label: "Emergency: if you are in danger" },
+];
 
-export function SiteFooter({ t }: { t: Pick<Dict, "footer" | "nav" | "access"> }) {
-  const f = t.footer;
+export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="footer-grid">
         <section aria-labelledby="f-about">
-          <h2 id="f-about">{f.about}</h2>
-          <p>{f.aboutText}</p>
+          <h2 id="f-about">About Raahat Shield</h2>
+          <p>
+            Raahat Shield helps women being blackmailed with morphed photos prove the image is fake, put together
+            evidence police can use, and post future photos more safely. Everything stays private and can be deleted at any time.
+          </p>
         </section>
         <section aria-labelledby="f-links">
-          <h2 id="f-links">{f.quickLinks}</h2>
+          <h2 id="f-links">Use Raahat Shield</h2>
           <ul>
-            <li><Link href="/report">{t.nav.report}</Link></li>
-            <li><Link href="/map">{t.nav.map}</Link></li>
-            <li><Link href="/check">{f.checkPhoto}</Link></li>
-            <li><Link href="/respond">{f.controlRoom}</Link></li>
-            <li><Link href="/#how">{f.howItWorks}</Link></li>
-            <li><Link href="/#privacy">{f.privacySafety}</Link></li>
+            <li><Link href="/case">Prove a photo is fake</Link></li>
+            <li><Link href="/case#pack">Build an evidence pack</Link></li>
+            <li><Link href="/protect">Protect my photos</Link></li>
+            <li><Link href="/#how">How it works</Link></li>
+            <li><Link href="/#privacy">Our privacy promise</Link></li>
           </ul>
         </section>
         <section aria-labelledby="f-help">
-          <h2 id="f-help">{f.helplines}</h2>
+          <h2 id="f-help">Helplines</h2>
           <ul className="helplines">
             {HELPLINES.map((h) => (
               <li key={h.number}>
                 <a href={`tel:${h.number}`} className="num">{h.number}</a>
-                <span>{f[h.key]}</span>
+                <span>{h.label}</span>
               </li>
             ))}
           </ul>
         </section>
         <section aria-labelledby="f-policies">
-          <h2 id="f-policies">{f.policies}</h2>
+          <h2 id="f-policies">Report and remove</h2>
           <ul>
-            <li><Link href="/accessibility">{f.accessibility}</Link></li>
-            <li><Link href="/privacy">{f.privacy}</Link></li>
-            <li><Link href="/disclaimer">{f.disclaimer}</Link></li>
-            <li><Link href="/help">{t.nav.help}</Link></li>
-            <li><Link href="/sitemap">{t.access.sitemap}</Link></li>
+            <li><a href="https://cybercrime.gov.in" target="_blank" rel="noreferrer">cybercrime.gov.in</a></li>
+            <li><a href="https://stopncii.org" target="_blank" rel="noreferrer">StopNCII.org</a></li>
+            <li><Link href="/help">What to do right now</Link></li>
+            <li><Link href="/privacy">Privacy policy</Link></li>
+            <li><Link href="/accessibility">Accessibility</Link></li>
           </ul>
         </section>
       </div>
       <div className="footer-base">
         <div className="footer-brand">
-          <Seal size={44} title="" id="seal-footer" />
-          <p>{f.owner}</p>
+          <ShieldMark size={40} title="" />
+          <p>
+            Raahat Shield is a project for Hacktober HackDays 2026 (SheBuilds Delhi, Tech for Social Good). It is not a
+            government or police service and does not give legal advice.
+          </p>
         </div>
         <p className="footer-meta">
-          {f.lastReviewed}: {LAST_REVIEWED}
+          Last reviewed: {LAST_REVIEWED}
           <br />
-          {f.credits}
+          Private image storage and processing by Cloudinary
         </p>
       </div>
     </footer>
