@@ -20,6 +20,8 @@ import {
   knownOldReason,
   matchReport,
   phashDistance,
+  REASON_NOT_REAL,
+  REASON_UNRELATED,
   scoreReport,
   type Candidate,
   type KnownOldPhoto,
@@ -335,6 +337,23 @@ export interface TriageInput {
   reporterHash?: string | null;
 }
 
+/** The oldest report of a near-identical photo, anywhere: its AI reading is reused. */
+function firstSamePhoto(phash: string, reports: Report[], self: string): Report | null {
+  return (
+    reports
+      .filter((r) => r.publicId !== self && r.phash && phashDistance(phash, r.phash) <= DUPLICATE_PHASH_MAX)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0] ?? null
+  );
+}
+
+function earlierFindings(r: Report): VisionFindings {
+  return {
+    ...findingsOf(r),
+    isRealPhoto: !r.reviewReasons.includes(REASON_NOT_REAL),
+    isDisasterRelated: !r.reviewReasons.includes(REASON_UNRELATED),
+  };
+}
+
 /** The whole pipeline for one fresh upload, shared by web, WhatsApp and Telegram intake. */
 export async function triage(input: TriageInput): Promise<Report> {
   const isImage = input.resourceType === "image";
@@ -356,9 +375,15 @@ export async function triage(input: TriageInput): Promise<Report> {
     locationSource = fromExif ? "exif" : "missing";
   }
 
+  // The same photo sent again gets the earlier AI reading instead of a fresh one, so one
+  // photo can't score Moderate once and Critical the next time.
+  const listed = listReports();
   const [findings, existing, thumbBytes, library] = await Promise.all([
-    getFindings(analysisUrl(input.publicId, input.resourceType), input.note),
-    listReports(),
+    listed.then((all) => {
+      const earlier = asset.phash ? firstSamePhoto(asset.phash, all, input.publicId) : null;
+      return earlier ? earlierFindings(earlier) : getFindings(analysisUrl(input.publicId, input.resourceType), input.note);
+    }),
+    listed,
     measureBytes(thumbUrl({ publicId: input.publicId, resourceType: input.resourceType })),
     knownOldLibrary(),
   ]);

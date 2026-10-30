@@ -256,15 +256,18 @@ export default function ReportPage() {
             <Gauge severity={result.severity} />
             <div>
               <p className="hint">{t.sent}</p>
+              {/* Repeat and matching reports lead with that, not only the priority. */}
+              {result.duplicateOf ? (
+                <p className="result-note">{t.duplicate}</p>
+              ) : result.corroborations > 0 ? (
+                <p className="result-note">{fmt(t.corroborated, { n: result.corroborations })}</p>
+              ) : null}
               <h2>
                 {t.priority}: <span className="sev sev-text" data-sev={result.severity}>{severity[result.severity]}</span>
               </h2>
               <p lang={lang}>{lang === "hi" ? result.summaryHi : result.summary}</p>
               <p className="hint">
                 {CATEGORY_LABEL[result.primaryCategory]}
-                {result.duplicateOf && `. ${t.duplicate}`}
-                {!result.duplicateOf && result.corroborations > 0 &&
-                  `. ${fmt(t.corroborated, { n: result.corroborations })}`}
               </p>
               {result.lat === null && <p className="hint">{t.pendingLocation}</p>}
             </div>
