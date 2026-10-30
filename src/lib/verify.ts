@@ -8,6 +8,7 @@
 import { REPORT_FOLDER } from "./constants";
 import { REASON_NOT_REAL, REASON_UNRELATED } from "./triage";
 import type { Report } from "./types";
+import { currentImageReview, imageNeedsReview } from "./image-review-state";
 
 export type Verdict = "verified" | "false" | "pending";
 
@@ -25,10 +26,10 @@ export interface FactCheck {
 
 const CONFIRMING = new Set(["verified", "dispatched", "resolved"]);
 
-export function factCheck(r: Pick<Report, "status" | "history" | "reviewReasons" | "corroborations">): FactCheck {
+export function factCheck(r: Pick<Report, "status" | "history" | "reviewReasons" | "corroborations" | "imageReview">): FactCheck {
   const confirmed = r.history.find((h) => CONFIRMING.has(h.action));
   const verdict: Verdict =
-    r.status === "rejected" ? "false" : confirmed && CONFIRMING.has(r.status) ? "verified" : "pending";
+    r.status === "rejected" ? "false" : confirmed && CONFIRMING.has(r.status) && !imageNeedsReview(r.imageReview) ? "verified" : "pending";
 
   const has = (prefix: string) => r.reviewReasons.some((x) => x.startsWith(prefix));
   const flag = (failed: boolean, pass: string, fail: string): Check => (failed ? { label: fail, result: "fail" } : { label: pass, result: "pass" });
@@ -36,13 +37,19 @@ export function factCheck(r: Pick<Report, "status" | "history" | "reviewReasons"
   const checks: Check[] = [
     flag(has("Matches an older photo"), "Not a known old or recycled disaster photo", "Matches a known old disaster photo"),
     flag(has("Photo taken on"), "Photo date matches the report (when the camera recorded one)", "The camera recorded an older date than the report"),
-    flag(has(REASON_NOT_REAL), "Looks like a real camera photo, not a screenshot or edit", "Looks like a screenshot, edit or photo of a screen"),
+    flag(has(REASON_NOT_REAL), "Visual triage raised no screenshot or edit flag (not proof of authenticity)", "Looks like a screenshot, edit or photo of a screen"),
     flag(has(REASON_UNRELATED), "Shows an emergency or disaster scene", "Doesn't show an emergency or disaster scene"),
     others > 0
       ? { label: `${others} other ${others === 1 ? "person" : "people"} reported the same incident nearby`, result: "pass" }
       : { label: "No other reports of this incident yet", result: "open" },
     verdict !== "pending" ? { label: "Checked by a control-room responder", result: "pass" } : { label: "Not checked by a control-room responder yet", result: "open" },
   ];
+  const review = currentImageReview(r.imageReview);
+  if (review) checks.push({ result: "open", label: review.acceptedAt ? "A responder accepted the image after reviewing the model's concern"
+    : review.status === "pending" ? "Gemini image assessment is pending"
+      : review.status === "suspected_synthetic" ? "Gemini raised a visual concern; human image review is needed (not proof of AI generation)"
+        : review.status === "no_clear_signs" ? "Gemini found no clear visual signs of generation; authenticity is unconfirmed"
+          : "Gemini image assessment was inconclusive, unavailable or not requested" });
   return { verdict, checks, verifiedAt: verdict === "verified" ? confirmed!.at : null };
 }
 

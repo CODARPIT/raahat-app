@@ -90,6 +90,8 @@ Pages and endpoints: `/` overview · `/report` citizen reporting (Hindi/English)
 
 ## Reports without a location
 
+The reporting screen supports a short **photo → send** flow, optional hazard buttons and details, background GPS and a persistent Call 112 action on phones. Missing location never blocks sending; offline reports are clearly saved locally until sent. See [emergency-reporting.md](docs/emergency-reporting.md).
+
 WhatsApp strips GPS from forwarded photos, and people in a flood often can't find themselves on a map.
 Such reports are **never dropped**: Raahat uses EXIF GPS if the photo still has it, asks Telegram reporters for a
 location (one button), and collects place hints from the note ("near Gandhi School", "मंदिर के पास"), the reporter's
@@ -107,6 +109,8 @@ Maps and the grouped evidence queue refresh every 5 seconds; the existing Cloudi
 See [incident-grouping.md](docs/incident-grouping.md) for matching rules, limitations and tests.
 
 ## Scoring
+
+Images can receive a second Gemini visual assessment starting 10 seconds after the initial rating. Set the server-only `GEMINI_API_KEY` to enable it. Results remain separate from severity: suspicious images go to human review without automatic rejection or a “fake” label. This is not SynthID verification. See [image-assessment.md](docs/image-assessment.md) for configuration, result meanings and background execution limits.
 
 `score = category weight + 25% of secondary hazards + 30 if anyone is in danger + 1.5 per person (max 10)
 + water depth (ankle 2 … chest 22) + 5 if vehicles can't reach + 4 per independent corroborating report (max 5)`,

@@ -29,7 +29,7 @@ import { shortId } from "@/lib/verify";
 import { senderKey } from "@/lib/whatsapp";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const PENDING_FOLDER = "raahat/telegram";
 const PENDING_MS = 60 * 60_000; // a photo and a location sent within an hour belong together
@@ -102,6 +102,7 @@ async function fileReport(
     note: photo.note.slice(0, 500),
     lang,
     channel: "telegram",
+    deferImageReview: (task) => after(task),
     reporterHash: key, // salted hash of the chat ID, never the ID itself
   });
   await sendMessage(

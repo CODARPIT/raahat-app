@@ -2,6 +2,7 @@
 // stays on its own Cloudinary asset. Anchors never move because a new member joins.
 import { haversineMeters, incidentRadiusForScore, INCIDENT_WINDOW_H, sameIncidentKind, severityFor } from "./triage";
 import type { Report, Severity } from "./types";
+import { imageNeedsReview } from "./image-review-state";
 
 export interface Incident {
   id: string;
@@ -17,7 +18,7 @@ export interface Incident {
 }
 
 function eligible(r: Report): r is Report & { lat: number; lng: number } {
-  return !r.duplicateOf && !r.needsReview && r.status !== "rejected" && r.status !== "resolved"
+  return !r.duplicateOf && !r.needsReview && !imageNeedsReview(r.imageReview) && r.status !== "rejected" && r.status !== "resolved"
     && r.primaryCategory !== "no_emergency" && r.lat !== null && r.lng !== null
     && Number.isFinite(r.lat) && Number.isFinite(r.lng) && Math.abs(r.lat) <= 90 && Math.abs(r.lng) <= 180
     && Number.isFinite(Date.parse(r.createdAt));

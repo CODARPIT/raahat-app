@@ -3,6 +3,8 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Gauge } from "@/components/Gauge";
+import { ImageReviewPanel } from "@/components/ImageReviewPanel";
+import { imageNeedsReview } from "@/lib/image-review-state";
 import {
   alertCardUrl,
   enhancedUrl,
@@ -138,7 +140,8 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
       open
         .filter((r) => SEV_RANK[r.severity] >= SEV_RANK[minSev])
         .filter((r) => !needsLocation || !isLocated(r))
-        .sort((a, b) => Number(a.needsReview) - Number(b.needsReview) || b.score - a.score || Date.parse(b.createdAt) - Date.parse(a.createdAt)),
+        // Gemini uncertainty does not push a possibly urgent report below low-priority cases.
+        .sort((a, b) => Number(a.reviewReasons.length > 0) - Number(b.reviewReasons.length > 0) || b.score - a.score || Date.parse(b.createdAt) - Date.parse(a.createdAt)),
     [open, minSev, needsLocation],
   );
 
@@ -370,6 +373,8 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                     {r.corroborations > 0 && `, ${r.corroborations + 1} reports`}
                     {r.status !== "new" && `, ${r.status}`}
                     {r.needsReview && ", needs review"}
+                    {r.imageReview?.status === "pending" && <span className="pill">Image check pending</span>}
+                    {imageNeedsReview(r.imageReview) && <span className="pill pill-warn">Image needs review</span>}
                     {r.aiMode === "demo" && ", rule-based"}
                   </span>
                 </span>
@@ -417,6 +422,11 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
               <h2>{CATEGORY_LABEL[selected.primaryCategory]}</h2>
               <p>{selected.summary}</p>
               <p className="hi" lang="hi">{selected.summaryHi}</p>
+              <ImageReviewPanel review={selected.imageReview} showReason={mode === "responder"} />
+              {mode === "responder" && imageNeedsReview(selected.imageReview) && <p className="row-actions">
+                <button className="btn" disabled={busy} onClick={() => patch({ acceptImage: true })}>Accept image evidence after review</button>
+                <span className="hint">Keeps the emergency score and status. Other review flags still apply.</span>
+              </p>}
               {selectedIncident && <section className="incident-evidence" aria-label="Incident evidence">
                 <h3>Same incident · {selectedIncident.radiusM} m grouping radius</h3>
                 <p>{incidentEvidence.length} original reports. A matching hazard and time are required; this circle is not the disaster's impact boundary. Public locations are approximate.</p>
