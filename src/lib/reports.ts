@@ -13,6 +13,7 @@ import { exifDate, exifLocation, oldPhotoReason } from "./exif";
 import { addHistory, decodeHistory, encodeHistory, type HistoryAction } from "./history";
 import { errorMessage } from "./errors";
 import { mergeReports } from "./merge";
+import { buildIncidents } from "./incidents";
 import { placeHint } from "./place";
 import {
   aiReviewReasons,
@@ -22,6 +23,7 @@ import {
   phashDistance,
   REASON_NOT_REAL,
   REASON_UNRELATED,
+  REASON_REUSED_PHOTO,
   scoreReport,
   type Candidate,
   type KnownOldPhoto,
@@ -305,18 +307,30 @@ async function knownOldLibrary(): Promise<KnownOldPhoto[]> {
 
 /** Open primaries a new or re-located report may merge into. Closed reports are hidden, so never merge into them. */
 function candidatesFrom(reports: Report[], exceptId?: string): Candidate[] {
+  const incidents = buildIncidents(reports);
+  const byReport = new Map(incidents.flatMap((incident) => incident.reportIds.map((id) => [id, incident] as const)));
+  const byId = new Map(reports.map((report) => [report.publicId, report]));
   return reports
-    .filter((r) => r.publicId !== exceptId && r.status !== "rejected" && r.status !== "resolved")
-    .map((r) => ({
+    .filter((r) => r.publicId !== exceptId && !r.needsReview && r.status !== "rejected" && r.status !== "resolved")
+    .map((r) => {
+      const incident = byReport.get(r.publicId);
+      const anchor = (incident && byId.get(incident.anchorId)) || r;
+      return {
       publicId: r.publicId,
       lat: r.lat,
       lng: r.lng,
       phash: r.phash,
-      primaryCategory: r.primaryCategory,
-      categories: r.categories,
+      primaryCategory: anchor.primaryCategory,
+      categories: anchor.categories,
       createdAt: r.createdAt,
       duplicateOf: r.duplicateOf,
-    }));
+      score: r.score,
+      ...(incident ? {
+        incidentLat: incident.lat, incidentLng: incident.lng,
+        incidentRadiusM: incident.radiusM, incidentCreatedAt: incident.createdAt,
+      } : {}),
+    };
+    });
 }
 
 /** Add one corroboration to each target and re-score it. */
@@ -393,11 +407,18 @@ export async function triage(input: TriageInput): Promise<Report> {
   const oldPhoto = oldPhotoReason(exifDate(asset.image_metadata), new Date(createdAt));
   const recycled = knownOldReason(asset.phash ?? null, library);
   const reviewReasons = [...aiReviewReasons(findings), ...(recycled ? [recycled] : []), ...(oldPhoto ? [oldPhoto] : [])];
-  const firstPass = scoreReport({ findings, corroborations: 0, reviewReasons });
-  const match = matchReport(
+  let firstPass = scoreReport({ findings, corroborations: 0, reviewReasons });
+  let match = reviewReasons.length ? { duplicateOf: null, corroborates: [] } : matchReport(
     { lat, lng, phash: asset.phash ?? null, primaryCategory: firstPass.primaryCategory, categories: findings.categories, createdAt },
     candidatesFrom(existing, input.publicId),
   );
+  // A known image at a different place/time is evidence for human review, not
+  // a second severe incident or an independent vote for a nearby report.
+  if (!reviewReasons.length && asset.phash && !match.duplicateOf && firstSamePhoto(asset.phash, existing, input.publicId)) {
+    reviewReasons.push(REASON_REUSED_PHOTO);
+    firstPass = scoreReport({ findings, corroborations: 0, reviewReasons });
+    match = { duplicateOf: null, corroborates: [] };
+  }
 
   const draft: Report = {
     publicId: input.publicId,
@@ -437,8 +458,8 @@ export async function triage(input: TriageInput): Promise<Report> {
   };
   const report = await save(draft);
 
-  // Bump the reports this one corroborates (or duplicates) and re-score them.
-  const bumpIds = match.duplicateOf ? [match.duplicateOf] : match.corroborates;
+  // A repeated image is not independent evidence and must never raise priority.
+  const bumpIds = match.duplicateOf ? [] : match.corroborates;
   await bump(existing.filter((r) => bumpIds.includes(r.publicId)));
 
   return report;
@@ -460,9 +481,8 @@ export async function setStatus(publicId: string, resourceType: "image" | "video
 
 /**
  * A coordinator (or the reporter, with a WhatsApp location pin) places a report on the
- * map. The first time a report gets a location it can also corroborate nearby reports
- * of the same incident (and be corroborated by them); moving the pin later only moves
- * the pin, so nothing is counted twice.
+ * map. A first location can corroborate nearby reports. Every move rechecks photo
+ * duplication and derived incident membership, but only the first pin adds votes.
  */
 export async function setLocation(
   publicId: string,
@@ -480,15 +500,17 @@ export async function setLocation(
     locationSource: source,
     history: addHistory(target.history, source === "whatsapp_pin" ? "wa_pin" : "pinned"),
   };
-  if (!firstLocation || target.duplicateOf) return save(located);
-
   const existing = await listReports();
-  const match = matchReport(
-    { lat, lng, phash: null, primaryCategory: target.primaryCategory, categories: target.categories, createdAt: target.createdAt },
+  const match = target.needsReview ? { duplicateOf: null, corroborates: [] } : matchReport(
+    { lat, lng, phash: target.phash, primaryCategory: target.primaryCategory, categories: target.categories, createdAt: target.createdAt },
     candidatesFrom(existing, publicId),
   );
-  const saved = await save({ ...located, corroborations: target.corroborations + match.corroborates.length });
-  await bump(existing.filter((r) => match.corroborates.includes(r.publicId)));
+  const newVotes = firstLocation && !match.duplicateOf ? match.corroborates : [];
+  const movedCopy = target.duplicateOf && !match.duplicateOf;
+  const saved = await save({ ...located, duplicateOf: match.duplicateOf,
+    reviewReasons: movedCopy ? [...new Set([...target.reviewReasons, REASON_REUSED_PHOTO])] : target.reviewReasons,
+    corroborations: target.corroborations + newVotes.length });
+  await bump(existing.filter((r) => newVotes.includes(r.publicId)));
   return saved;
 }
 

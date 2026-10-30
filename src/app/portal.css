@@ -314,3 +314,12 @@ body { background: var(--paper); }
   .portal-quick-services .portal-section-heading > a { max-width: 120px; font-size: 0.75rem; }
   .portal-information { gap: 18px; }
 }
+
+.incident-pill { margin-left: 6px; border: 1px solid var(--line); color: var(--teal); }
+.incident-evidence { margin: 18px 0; padding: 16px; border: 1px solid var(--line); border-left: 4px solid var(--teal); background: var(--portal-soft); border-radius: 4px; }
+.incident-evidence h3 { margin: 0 0 8px; font-size: 0.9375rem; }
+.incident-evidence p { margin: 0 0 12px; font-size: 0.75rem; color: var(--ink-soft); }
+.incident-evidence ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.incident-evidence button { text-align: left; padding: 9px 11px; width: 100%; background: var(--paper); border: 1px solid var(--line); border-radius: 3px; color: var(--ink); font-size: 0.8125rem; cursor: pointer; }
+.incident-evidence button[aria-pressed="true"] { border-color: var(--teal); font-weight: 700; }
+.incident-evidence .pill { margin-left: 6px; }

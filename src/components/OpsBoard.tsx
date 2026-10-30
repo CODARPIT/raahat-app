@@ -15,6 +15,8 @@ import { HISTORY_LABEL } from "@/lib/history";
 import { CATEGORY_LABEL, CHANNEL_LABEL, DEPTH_LABEL, LOCATION_SOURCE_LABEL } from "@/lib/labels";
 import { isLocated, type Report, type Severity, type Status } from "@/lib/types";
 import { shortId } from "@/lib/verify";
+import type { Incident } from "@/lib/incidents";
+import { REPORT_REFRESH_MS } from "@/lib/constants";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
@@ -73,6 +75,8 @@ const signed = (n: number) => (n >= 0 ? `+${n}` : `−${Math.abs(n)}`);
 
 export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
   const [reports, setReports] = useState<Report[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [groupIncidents, setGroupIncidents] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
@@ -93,11 +97,12 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch("/api/reports", { cache: "no-store" });
+      const res = await fetch("/api/reports", { cache: "no-store", credentials: mode === "public" ? "omit" : "same-origin" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Couldn't load reports.");
       const list = data.reports as Report[];
       setReports(list);
+      setIncidents((data.incidents as Incident[] | undefined) ?? []);
       if (seen.current === null) {
         seen.current = new Set(list.map((r) => r.publicId));
       } else {
@@ -110,15 +115,15 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
       setAi((data.ai as AiInfo | undefined) ?? null);
       setError(null);
     } catch (e) {
-      setError(`${(e as Error).message} Retrying every 20 seconds.`);
+      setError(`${(e as Error).message} Retrying every ${REPORT_REFRESH_MS / 1000} seconds.`);
     } finally {
       setLoaded(true);
     }
-  }, []);
+  }, [mode]);
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 20000);
+    const id = setInterval(load, REPORT_REFRESH_MS);
     return () => clearInterval(id);
   }, [load]);
 
@@ -128,7 +133,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
   );
   const unlocatedCount = open.filter((r) => !isLocated(r)).length;
 
-  const queue = useMemo(
+  const filteredReports = useMemo(
     () =>
       open
         .filter((r) => SEV_RANK[r.severity] >= SEV_RANK[minSev])
@@ -137,7 +142,22 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
     [open, minSev, needsLocation],
   );
 
+  const incidentByReport = useMemo(() => new Map(incidents.flatMap((incident) => incident.reportIds.map((id) => [id, incident] as const))), [incidents]);
+  // Highest-priority original represents the group; all evidence remains accessible.
+  const queue = useMemo(() => {
+    if (!groupIncidents) return filteredReports;
+    const seen = new Set<string>();
+    return filteredReports.filter((report) => {
+      const id = incidentByReport.get(report.publicId)?.id ?? report.publicId;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }, [filteredReports, incidentByReport, groupIncidents]);
+
   const selected = reports.find((r) => r.publicId === selectedId) ?? null;
+  const selectedIncident = selected ? incidentByReport.get(selected.publicId) : undefined;
+  const incidentEvidence = selectedIncident ? reports.filter((report) => selectedIncident.reportIds.includes(report.publicId)) : [];
   const duplicates = selected ? reports.filter((r) => r.duplicateOf === selected.publicId) : [];
 
   // Centre of the located reports: Nominatim prefers place names near the incident area.
@@ -211,6 +231,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setReports((rs) => rs.map((r) => (r.publicId === selected.publicId ? (data.report as Report) : r)));
+      void load(); // Refresh circles/membership after a status or pin change.
       return true;
     } catch (e) {
       setError((e as Error).message);
@@ -224,7 +245,6 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
     if (await patch({ lat, lng })) {
       setPinning(false);
       setSuggestion(null);
-      load(); // nearby reports may have gained a corroboration
     }
   }
 
@@ -274,7 +294,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
           </p>
         )}
         <div className="ops-bar">
-          <strong className="num">{queue.length} open</strong>
+          <strong className="num">{groupIncidents ? `${queue.filter((r) => incidentByReport.has(r.publicId)).length} incidents · ` : ""}{filteredReports.length} reports</strong>
           {fresh.size > 0 && <span className="pill pill-new num" role="status">{fresh.size} new</span>}
           <span className="spacer" />
           <label>
@@ -293,6 +313,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
             </label>
           )}
           <label><input type="checkbox" checked={hideClosed} onChange={(e) => setHideClosed(e.target.checked)} /> Hide closed</label>
+          <label><input type="checkbox" checked={groupIncidents} onChange={(e) => setGroupIncidents(e.target.checked)} /> Group incidents</label>
           <label><input type="checkbox" checked={bw === "saver"} onChange={(e) => setBw(e.target.checked ? "saver" : "normal")} /> 2G mode</label>
           <button type="button" className="linklike kbd-hint" onClick={() => helpRef.current?.showModal()} aria-keyshortcuts="?">
             Shortcuts <kbd>?</kbd>
@@ -345,6 +366,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                     {!isLocated(r) && <span className="pill pill-warn">No location</span>}{" "}
                     {r.channel !== "web" && <span className="pill">{CHANNEL_LABEL[r.channel]}</span>}{" "}
                     {ago(r.createdAt)}
+                    {incidentByReport.has(r.publicId) && <span className="pill incident-pill">{incidentByReport.get(r.publicId)!.reportIds.length} in incident</span>}
                     {r.corroborations > 0 && `, ${r.corroborations + 1} reports`}
                     {r.status !== "new" && `, ${r.status}`}
                     {r.needsReview && ", needs review"}
@@ -370,10 +392,11 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
             <span><i className="dot" data-sev="high" />High</span>
             <span><i className="dot" data-sev="moderate" />Moderate</span>
             <span><i className="dot" data-sev="low" />Low</span>
-            <span className="legend-note">Bigger circle = more independent reports</span>
+            <span className="legend-note">Dashed circles: severity-based grouping areas</span>
           </div>
           <MapView
-            reports={queue}
+            reports={filteredReports}
+            incidents={incidents}
             selectedId={selectedId}
             onSelect={(r) => setSelectedId(r.publicId)}
             onPick={pinning ? pinAt : undefined}
@@ -394,6 +417,14 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
               <h2>{CATEGORY_LABEL[selected.primaryCategory]}</h2>
               <p>{selected.summary}</p>
               <p className="hi" lang="hi">{selected.summaryHi}</p>
+              {selectedIncident && <section className="incident-evidence" aria-label="Incident evidence">
+                <h3>Same incident · {selectedIncident.radiusM} m grouping radius</h3>
+                <p>{incidentEvidence.length} original reports. A matching hazard and time are required; this circle is not the disaster's impact boundary. Public locations are approximate.</p>
+                <ul>{incidentEvidence.map((report) => <li key={report.publicId}><button type="button" aria-pressed={selectedId === report.publicId} onClick={() => setSelectedId(report.publicId)}>
+                  <span className="sev sev-text" data-sev={report.severity}>{report.severity}</span> {report.summary || CATEGORY_LABEL[report.primaryCategory]}
+                  {report.publicId === selectedIncident.anchorId && <span className="pill">Anchor report</span>}
+                </button></li>)}</ul>
+              </section>}
               {mode === "responder" && selected.note && <p><strong>Reporter wrote:</strong> {selected.note}</p>}
               {selected.reviewReasons.length > 0 && (
                 <div className="review" role="note">

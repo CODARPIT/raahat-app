@@ -103,7 +103,7 @@ const existing: Candidate[] = [
 ];
 
 test("a forwarded copy of the same photo is a duplicate of the earliest primary", () => {
-  const m = matchReport({ lat: 26.15, lng: 91.74, phash: "a1b2c3d4e5f60719", primaryCategory: "trapped_or_injured", createdAt: now }, existing);
+  const m = matchReport({ lat: 26.1451, lng: 91.7367, phash: "a1b2c3d4e5f60719", primaryCategory: "trapped_or_injured", createdAt: now }, existing);
   assert.equal(m.duplicateOf, "a");
   assert.deepEqual(m.corroborates, []);
 });

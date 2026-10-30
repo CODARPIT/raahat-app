@@ -201,6 +201,8 @@ const hi: Dict = {
     tryNow: "अभी भेजकर देखें",
     duplicate: "यह घटना पहले से दर्ज है, आपकी फ़ोटो जोड़ दी गई।",
     corroborated: "{n} और लोगों ने यही बताया है।",
+    incidentAreaLabel: "घटना समूह का दायरा: {radius} मीटर।",
+    incidentLinked: "इस घटना से {n} रिपोर्ट जुड़ी हैं।",
   },
   check: {
     title: "वायरल फ़ोटो की जाँच करें",

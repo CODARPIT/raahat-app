@@ -98,6 +98,14 @@ lists them; a coordinator clicks **Pin location** and clicks the map. A Nominati
 place hint is drawn as a dashed suggestion and is never confirmed automatically. Unlocated reports can still be
 merged as duplicates (by perceptual hash) but only corroborate other reports once they have a location.
 
+## Incident circles
+
+High/critical reports can anchor an incident grouping area. A compatible report can join only inside the current radius and within 12 hours. The circle grows with the strongest active evidence (about 200 m at score 45 to 800 m at score 100) and shrinks when the strongest evidence is resolved or excluded. It stays centred on the anchor, so nearby reports cannot extend it by forming a spatial chain. The radius is a matching heuristic, not the disaster's physical impact boundary.
+
+Maps and the grouped evidence queue refresh every 5 seconds; the existing Cloudinary Search cache may add delay. Each original report, image and status remains available. Duplicate photos do not increase priority, and a known photo reused outside the matching area/time goes to human review. Public locations and circle centres remain approximate.
+
+See [incident-grouping.md](docs/incident-grouping.md) for matching rules, limitations and tests.
+
 ## Scoring
 
 `score = category weight + 25% of secondary hazards + 30 if anyone is in danger + 1.5 per person (max 10)

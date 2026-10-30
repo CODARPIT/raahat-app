@@ -270,6 +270,10 @@ export default function ReportPage() {
                 {CATEGORY_LABEL[result.primaryCategory]}
               </p>
               {result.lat === null && <p className="hint">{t.pendingLocation}</p>}
+              {result.incidentId && <p className="result-note">
+                {fmt(t.incidentAreaLabel, { radius: result.incidentRadiusM ?? 300 })}{" "}
+                {(result.incidentReportCount ?? 0) > 1 && fmt(t.incidentLinked, { n: result.incidentReportCount ?? 0 })}
+              </p>}
             </div>
           </div>
           <div className="preview" style={{ marginTop: 16 }}>

@@ -84,6 +84,10 @@ export interface Report {
   phash: string | null;
   reporterHash: string | null; // salted hash of a WhatsApp number or Telegram chat, never the number itself
   history: HistoryEntry[]; // audit trail: filed, status changes, pins (newest last)
+  /** Derived API fields, not separately persisted or trusted from client input. */
+  incidentId?: string | null;
+  incidentRadiusM?: number | null;
+  incidentReportCount?: number;
 }
 
 /** A report that has a location. Only these can corroborate or be drawn on the map. */

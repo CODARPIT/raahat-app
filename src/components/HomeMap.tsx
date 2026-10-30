@@ -4,6 +4,8 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { useI18n } from "@/components/LocaleProvider";
 import { isLocated, type Report } from "@/lib/types";
+import type { Incident } from "@/lib/incidents";
+import { REPORT_REFRESH_MS } from "@/lib/constants";
 
 const MapView = dynamic(() => import("@/components/MapView"), {
   ssr: false,
@@ -18,6 +20,7 @@ export function HomeMap({ unavailableLabel, reportCountLabel, privacyNote }: {
 }) {
   const { t } = useI18n();
   const [reports, setReports] = useState<Report[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "unavailable">("loading");
 
   useEffect(() => {
@@ -35,9 +38,10 @@ export function HomeMap({ unavailableLabel, reportCountLabel, privacyNote }: {
           signal: controller.signal,
         });
         if (!response.ok) throw new Error("Reports unavailable");
-        const data = await response.json() as { reports: Report[]; stale?: boolean };
+        const data = await response.json() as { reports: Report[]; incidents?: Incident[]; stale?: boolean };
         if (!controller.signal.aborted) {
           setReports(data.reports.filter((r) => isLocated(r) && !r.duplicateOf && !r.needsReview && r.status !== "resolved" && r.status !== "rejected"));
+          setIncidents(data.incidents ?? []);
           setStatus(data.stale ? "unavailable" : "ready");
         }
       } catch {
@@ -48,7 +52,7 @@ export function HomeMap({ unavailableLabel, reportCountLabel, privacyNote }: {
     }
 
     void load();
-    const interval = setInterval(() => { void load(); }, 20_000);
+    const interval = setInterval(() => { void load(); }, REPORT_REFRESH_MS);
     return () => {
       controller.abort();
       clearInterval(interval);
@@ -58,7 +62,7 @@ export function HomeMap({ unavailableLabel, reportCountLabel, privacyNote }: {
   return (
     <div className="portal-home-map">
       <div className="portal-map-stage" role="region" aria-label={t.nav.map}>
-        <MapView reports={reports} center={[22.6, 79.4]} zoom={4} scrollWheelZoom={false} regionalOverview />
+        <MapView reports={reports} incidents={incidents} center={[22.6, 79.4]} zoom={4} scrollWheelZoom={false} regionalOverview />
         <div className="map-legend" aria-label={t.nav.map}>
           {(["critical", "high", "moderate", "low"] as const).map((severity) => (
             <span key={severity}><i className="dot" data-sev={severity} aria-hidden />{t.severity[severity]}</span>

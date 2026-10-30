@@ -203,6 +203,8 @@ const en = {
     tryNow: "Try sending now",
     duplicate: "Already reported; your photo was added to it.",
     corroborated: "{n} other people reported this too.",
+    incidentAreaLabel: "Incident grouping area: {radius} m.",
+    incidentLinked: "{n} reports linked to this incident.",
   },
   check: {
     title: "Check a viral photo",

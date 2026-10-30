@@ -201,6 +201,8 @@ const mr: Dict = {
     tryNow: "आता पाठवून पाहा",
     duplicate: "ही घटना आधीच नोंदवलेली आहे; तुमचा फोटो त्यात जोडला.",
     corroborated: "आणखी {n} जणांनी हेच कळवले आहे.",
+    incidentAreaLabel: "घटना गटाचा परिसर: {radius} मीटर.",
+    incidentLinked: "या घटनेशी {n} अहवाल जोडले आहेत.",
   },
   check: {
     title: "व्हायरल फोटो तपासा",

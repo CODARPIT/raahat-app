@@ -201,6 +201,8 @@ const gu: Dict = {
     tryNow: "હમણાં મોકલી જુઓ",
     duplicate: "આ ઘટના પહેલેથી નોંધાયેલી છે; તમારો ફોટો તેમાં ઉમેરાયો.",
     corroborated: "બીજા {n} લોકોએ પણ આ જણાવ્યું છે.",
+    incidentAreaLabel: "ઘટના જૂથનો વિસ્તાર: {radius} મીટર.",
+    incidentLinked: "આ ઘટના સાથે {n} અહેવાલ જોડાયેલા છે.",
   },
   check: {
     title: "વાયરલ ફોટો ચકાસો",

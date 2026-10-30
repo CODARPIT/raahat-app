@@ -2,7 +2,8 @@ import { errorMessage } from "@/lib/errors";
 import { NextResponse } from "next/server";
 import { isResponder } from "@/lib/auth";
 import { coarsen } from "@/lib/triage";
-import { listReportsDetailed, setLocation, setStatus, triage } from "@/lib/reports";
+import { listReports, listReportsDetailed, setLocation, setStatus, triage } from "@/lib/reports";
+import { annotateIncidents, buildIncidents } from "@/lib/incidents";
 import { clientIp, createLimiter, tooMany } from "@/lib/rate-limit";
 import { aiMode, getAiQuota } from "@/lib/vision";
 import { isLocated, type LocationSource, type Report, type Status } from "@/lib/types";
@@ -38,11 +39,16 @@ function isPublic(r: Report) {
 export async function GET() {
   try {
     const [{ reports, stale }, responder] = await Promise.all([listReportsDetailed(), isResponder()]);
+    // Decide membership using exact locations before rounding the public view.
+    const visible = responder ? reports : reports.filter(isPublic);
+    const incidents = buildIncidents(visible);
+    const annotated = annotateIncidents(visible, incidents);
     return NextResponse.json({
       responder,
       stale,
       ...(responder ? { ai: { mode: aiMode(), quota: getAiQuota() } } : {}),
-      reports: responder ? reports : reports.filter(isPublic).map(publicView),
+      reports: responder ? annotated : annotated.map(publicView),
+      incidents: responder ? incidents : incidents.map((incident) => ({ ...incident, lat: coarsen(incident.lat), lng: coarsen(incident.lng) })),
     });
   } catch (err) {
     return NextResponse.json({ error: errorMessage(err), reports: [] }, { status: 500 });
@@ -87,7 +93,9 @@ export async function POST(req: Request) {
       lang: body.lang === "hi" ? "hi" : "en",
       channel: "web",
     });
-    return NextResponse.json({ report: publicView(report) });
+    const incidents = buildIncidents((await listReports()).filter(isPublic));
+    const [annotated] = annotateIncidents([report], incidents);
+    return NextResponse.json({ report: publicView(annotated) });
   } catch (err) {
     return NextResponse.json({ error: errorMessage(err) }, { status: 500 });
   }
