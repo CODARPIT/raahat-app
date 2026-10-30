@@ -121,6 +121,16 @@ Reasons for review: the AI flags screenshots, memes, drawings, photos of screens
 photo's EXIF date is more than 7 days old ("Photo taken on 3 Jul 2017"). This catches some recycled photos,
 not every old photo. Weights live in `src/lib/triage.ts` and are covered by `tests/triage.test.ts`.
 
+## AI-image check (Gemini)
+
+About 10 seconds after a web, Telegram or WhatsApp photo is rated, Raahat asks Gemini whether the image shows
+concrete signs of AI generation. The result sits in its own panel in the control room and never changes the hazard
+score or status. A **suspected** image stays out of incident circles, corroboration and the public map until a
+responder clicks **Accept image evidence after review**; it is never auto-rejected or called fake. While the check is
+pending, the report's circle is provisional and it can't add corroboration. The reporter follows the result on their
+screen with a one-hour signed receipt. It does not detect SynthID or C2PA and can be wrong both ways. Set
+`GEMINI_API_KEY` (free in Google AI Studio); details, limits and states in [docs/image-review.md](docs/image-review.md).
+
 ## Languages
 
 The public site is in **12 languages**: English, हिन्दी, বাংলা, অসমীয়া, ଓଡ଼ିଆ, मराठी, ગુજરાતી, ਪੰਜਾਬੀ, தமிழ், తెలుగు,

@@ -17,6 +17,7 @@ import { isLocated, type Report, type Severity, type Status } from "@/lib/types"
 import { shortId } from "@/lib/verify";
 import type { Incident } from "@/lib/incidents";
 import { REPORT_REFRESH_MS } from "@/lib/constants";
+import { imageConcern, type ImageReviewState } from "@/lib/image-review";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
@@ -28,6 +29,15 @@ const NEXT_STATUS: { status: Status; label: string }[] = [
   { status: "rejected", label: "Reject as false" },
 ];
 const LOW_QUOTA = 50;
+
+/** The delayed AI-image check, kept apart from the hazard score. */
+const IMAGE_CHECK: Record<Exclude<ImageReviewState, "not_assessed">, string> = {
+  pending: "Pending. A second check starts about 10 seconds after filing. Until it finishes, this report's circle is provisional and it can't add corroboration.",
+  clear: "No clear signs of AI generation. This doesn't prove the photo is genuine or that the event happened.",
+  suspected: "Suspected synthetic. Score and status are unchanged, but the report stays out of incident circles and the public map until you accept the image evidence. It has not been rejected.",
+  inconclusive: "Inconclusive. The model couldn't tell; this is not evidence either way.",
+  unavailable: "Unavailable. No assessment was obtained (no key, an error, a timeout or an overdue job); this is not evidence either way.",
+};
 
 /** Single-key shortcuts for a coordinator working through a long queue. */
 const SHORTCUTS: { keys: string; action: string; responderOnly?: boolean }[] = [
@@ -371,6 +381,8 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                     {r.status !== "new" && `, ${r.status}`}
                     {r.needsReview && ", needs review"}
                     {r.aiMode === "demo" && ", rule-based"}
+                    {mode === "responder" && r.imageReview?.state === "pending" && <> <span className="pill">Image check pending</span></>}
+                    {mode === "responder" && imageConcern(r) && <> <span className="pill pill-warn">Possible AI image</span></>}
                   </span>
                 </span>
               </button>
@@ -430,6 +442,27 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                 <div className="review" role="note">
                   <strong>Check before acting:</strong>
                   <ul>{selected.reviewReasons.map((r) => <li key={r}>{r}</li>)}</ul>
+                </div>
+              )}
+              {mode === "responder" && selected.imageReview && selected.imageReview.state !== "not_assessed" && (
+                <div className={imageConcern(selected) ? "review" : "image-check"} role="note">
+                  <strong>AI image check (separate from the score):</strong> {IMAGE_CHECK[selected.imageReview.state]}
+                  {selected.imageReview.concerns.length > 0 && (
+                    <ul>{selected.imageReview.concerns.map((c) => <li key={c}>{c}</li>)}</ul>
+                  )}
+                  {selected.imageReview.acceptedAt && (
+                    <p className="hint">
+                      A responder accepted this image as evidence on{" "}
+                      {new Date(selected.imageReview.acceptedAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.
+                      The model&apos;s concerns are kept for the record.
+                    </p>
+                  )}
+                  {selected.imageReview.model && <p className="hint">Checked with {selected.imageReview.model}. It cannot detect SynthID or C2PA, and can be wrong both ways.</p>}
+                  {imageConcern(selected) && (
+                    <button className="btn" disabled={busy} onClick={() => patch({ acceptImage: true })}>
+                      Accept image evidence after review
+                    </button>
+                  )}
                 </div>
               )}
               <dl>

@@ -289,6 +289,9 @@ html[data-text="lg"] { font-size: 115%; }
 
 .review { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--sev-high); background: var(--mist); font-size: 0.9375rem; }
 .review ul { margin: 4px 0 0; padding-left: 20px; }
+.image-check { margin: 12px 0; padding: 10px 14px; border-left: 3px solid var(--line, #c9d3dd); background: var(--mist); font-size: 0.9375rem; }
+.image-check ul { margin: 4px 0 0; padding-left: 20px; }
+.review .btn, .image-check .btn { margin-top: 8px; }
 
 .why { margin: 4px 0 8px; font-size: 0.9375rem; }
 .why summary { cursor: pointer; font-weight: 700; }

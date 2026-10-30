@@ -99,12 +99,12 @@ export default function MapView({ reports = [], incidents = [], selectedId, onSe
       />
       {incidents.filter((incident) => incident.reportIds.some((id) => visibleIds.has(id))).map((incident) => (
         <Circle key={`incident-${incident.id}`} center={[incident.lat, incident.lng]} radius={incident.radiusM}
-          pathOptions={{ color: COLOR[incident.severity], weight: selectedIncident?.id === incident.id ? 3 : 1.5, dashArray: "6 5", fillColor: COLOR[incident.severity], fillOpacity: 0.08, className: "incident-radius" }}
+          pathOptions={{ color: COLOR[incident.severity], weight: selectedIncident?.id === incident.id ? 3 : 1.5, dashArray: incident.provisional ? "2 6" : "6 5", fillColor: COLOR[incident.severity], fillOpacity: incident.provisional ? 0.03 : 0.08, className: "incident-radius" }}
           eventHandlers={{ click: () => {
             const member = located.filter((report) => incident.reportIds.includes(report.publicId)).sort((a, b) => b.score - a.score)[0];
             if (member) onSelect?.(member);
           } }}>
-          <Tooltip>{fmt(t.report.incidentAreaLabel, { radius: incident.radiusM })}<br />{fmt(t.report.incidentLinked, { n: incident.reportIds.length })}</Tooltip>
+          <Tooltip>{fmt(t.report.incidentAreaLabel, { radius: incident.radiusM })}<br />{fmt(t.report.incidentLinked, { n: incident.reportIds.length })}{incident.provisional && <><br />{t.report.incidentProvisional}</>}</Tooltip>
         </Circle>
       ))}
       {located

@@ -4,11 +4,12 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Gauge } from "@/components/Gauge";
 import { CATEGORY_LABEL, thumbUrl } from "@/lib/cld-url";
-import { REPORT_FOLDER, REPORT_TAG } from "@/lib/constants";
+import { REPORT_FOLDER, REPORT_REFRESH_MS, REPORT_TAG } from "@/lib/constants";
 import { downscale } from "@/lib/downscale";
 import { useI18n } from "@/components/LocaleProvider";
 import { fmt, storageLang } from "@/lib/i18n";
 import { listItems, online, OfflineError, putItem, removeItem, type OutboxMeta } from "@/lib/outbox";
+import type { ImageReviewState } from "@/lib/image-review";
 import type { Report } from "@/lib/types";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
@@ -49,7 +50,16 @@ async function uploadPhoto(body: Blob): Promise<Upload> {
   return { publicId: data.public_id, resourceType: data.resource_type === "video" ? "video" : "image" };
 }
 
-async function postReport(upload: Upload, meta: OutboxMeta): Promise<Report> {
+interface Filed {
+  report: Report;
+  /** One-hour signed receipt for following this report's image check. */
+  receipt: string | null;
+}
+
+/** Stop asking after this long; the server shows an overdue check as unavailable by then. */
+const REVIEW_POLL_MAX_MS = 3 * 60_000;
+
+async function postReport(upload: Upload, meta: OutboxMeta): Promise<Filed> {
   const res = await fetch("/api/reports", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -57,7 +67,7 @@ async function postReport(upload: Upload, meta: OutboxMeta): Promise<Report> {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error ?? "The report didn't go through. Check your connection and send again.");
-  return data.report as Report;
+  return { report: data.report as Report, receipt: (data.receipt as string | null) ?? null };
 }
 
 export default function ReportPage() {
@@ -72,12 +82,40 @@ export default function ReportPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Report | null>(null);
+  const [receipt, setReceipt] = useState<string | null>(null);
   // Offline support: a photo that couldn't upload yet, and reports saved on the phone.
   const [local, setLocal] = useState<{ blob: Blob; url: string } | null>(null);
   const [offlineNote, setOfflineNote] = useState(false);
   const [queuedId, setQueuedId] = useState<string | null>(null);
   const [waiting, setWaiting] = useState(0);
   const [flushing, setFlushing] = useState(false);
+
+  const reviewState = result?.imageReview?.state;
+
+  // Follow the delayed image check with the filing receipt; it works even if a
+  // flagged report has left the public feed.
+  useEffect(() => {
+    if (!receipt || reviewState !== "pending") return;
+    const started = Date.now();
+    let live = true;
+    const timer = setInterval(async () => {
+      if (Date.now() - started > REVIEW_POLL_MAX_MS) return clearInterval(timer);
+      try {
+        const res = await fetch("/api/reports/status", { headers: { Authorization: `Bearer ${receipt}` }, cache: "no-store" });
+        if (!res.ok) return;
+        const { imageReview } = (await res.json()) as { imageReview: { state: ImageReviewState; at: string | null } };
+        if (live && imageReview.state !== "pending") {
+          setResult((r) => r && { ...r, imageReview: { ...r.imageReview, ...imageReview } });
+        }
+      } catch {
+        // weak signal: try again on the next tick
+      }
+    }, REPORT_REFRESH_MS);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [receipt, reviewState]);
   const queuedRef = useRef<string | null>(null);
   const busyRef = useRef(false);
   queuedRef.current = queuedId;
@@ -103,10 +141,11 @@ export default function ReportPage() {
             up = await online(() => uploadPhoto(item.blob!));
             await putItem({ ...item, upload: up, blob: null }); // never upload the same photo twice
           }
-          const report = await online(() => postReport(up!, item.meta));
+          const filed = await online(() => postReport(up!, item.meta));
           await removeItem(item.id);
           if (item.id === queuedRef.current) {
-            setResult(report);
+            setResult(filed.report);
+            setReceipt(filed.receipt);
             setQueuedId(null);
           }
         } catch (err) {
@@ -194,7 +233,11 @@ export default function ReportPage() {
     setSending(true);
     try {
       if (!upload) await queue(meta); // the photo itself is still waiting for signal
-      else setResult(await online(() => postReport(upload, meta)));
+      else {
+        const filed = await online(() => postReport(upload, meta));
+        setResult(filed.report);
+        setReceipt(filed.receipt);
+      }
     } catch (e) {
       if (e instanceof OfflineError) await queue(meta);
       else setError((e as Error).message);
@@ -210,6 +253,7 @@ export default function ReportPage() {
     setNote("");
     setPlace("");
     setResult(null);
+    setReceipt(null);
     setQueuedId(null);
     setError(null);
   }
@@ -274,6 +318,14 @@ export default function ReportPage() {
                 {fmt(t.incidentAreaLabel, { radius: result.incidentRadiusM ?? 300 })}{" "}
                 {(result.incidentReportCount ?? 0) > 1 && fmt(t.incidentLinked, { n: result.incidentReportCount ?? 0 })}
               </p>}
+              {reviewState && reviewState !== "not_assessed" && (
+                <p className="hint" role="status">
+                  {reviewState === "pending" ? t.reviewPending
+                    : reviewState === "clear" ? t.reviewClear
+                    : reviewState === "suspected" ? t.reviewSuspected
+                    : t.reviewUnclear}
+                </p>
+              )}
             </div>
           </div>
           <div className="preview" style={{ marginTop: 16 }}>

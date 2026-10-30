@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { annotateIncidents, buildIncidents } from "../src/lib/incidents";
 import { incidentRadiusForScore, matchReport, phashDistance, severityFor } from "../src/lib/triage";
 import type { Report } from "../src/lib/types";
+import { NOT_ASSESSED } from "../src/lib/image-review";
 
 const time = "2026-10-31T08:00:00.000Z";
 // Move due north by an exact great-circle distance, independently of the matcher.
@@ -16,7 +17,7 @@ function report(id: string, metres = 0, extra: Partial<Report> = {}): Report {
     peopleVisible: 3, peopleInDanger: true, waterDepth: "waist", accessBlocked: false,
     summary: id, summaryHi: "", status: "new", needsReview: false, reviewReasons: [],
     duplicateOf: null, corroborations: 0, originalBytes: 0, thumbBytes: 0, aiMode: "demo",
-    phash: null, reporterHash: null, history: [], ...extra,
+    phash: null, reporterHash: null, history: [], imageReview: NOT_ASSESSED, ...extra,
   };
 }
 

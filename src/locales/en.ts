@@ -205,6 +205,11 @@ const en = {
     corroborated: "{n} other people reported this too.",
     incidentAreaLabel: "Incident grouping area: {radius} m.",
     incidentLinked: "{n} reports linked to this incident.",
+    incidentProvisional: "Provisional: a photo check is still running.",
+    reviewPending: "Checking your photo for signs of AI generation. Your report is already with the control room.",
+    reviewClear: "Photo check: no clear signs of AI generation. This doesn't prove the photo is genuine.",
+    reviewSuspected: "Photo check: possible signs of AI generation. A responder will look at your photo before it is grouped with other reports or shown on the public map. Your report has not been rejected.",
+    reviewUnclear: "The photo check couldn't give a clear answer. This doesn't affect your report.",
   },
   check: {
     title: "Check a viral photo",

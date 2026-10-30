@@ -5,6 +5,7 @@ import { createLimiter } from "../src/lib/rate-limit";
 import { knownOldReason, scoreReport } from "../src/lib/triage";
 import { reportsToCsv } from "../src/lib/sitrep";
 import type { Report } from "../src/lib/types";
+import { NOT_ASSESSED } from "../src/lib/image-review";
 
 // ── Known old photos ─────────────────────────────────────────────────────────
 
@@ -71,7 +72,7 @@ function report(over: Partial<Report>): Report {
     categories: ["flood"], primaryCategory: "flood", severity: "moderate", score: 30, breakdown: [],
     peopleVisible: 2, peopleInDanger: false, waterDepth: "knee", accessBlocked: false, summary: "Water in the lane", summaryHi: "",
     status: "new", needsReview: false, reviewReasons: [], duplicateOf: null, corroborations: 0,
-    originalBytes: 0, thumbBytes: 0, aiMode: "live", phash: null, reporterHash: null, history: [], ...over,
+    originalBytes: 0, thumbBytes: 0, aiMode: "live", phash: null, reporterHash: null, history: [], imageReview: NOT_ASSESSED, ...over,
   };
 }
 
