@@ -65,6 +65,7 @@ const gu: Dict = {
     live: "લાઇવ સ્થિતિ",
     updated: "{time} IST વાગ્યે અપડેટ",
     liveOff: "લાઇવ માહિતી ઉપલબ્ધ નથી",
+    openReportsLabel: "સક્રિય અહેવાલો",
     bandCritical: "અતિ ગંભીર: જીવને જોખમ",
     bandHigh: "ગંભીર: તાત્કાલિક મદદ જોઈએ",
     bandModerate: "મધ્યમ: નુકસાન, કોઈ જોખમમાં નથી",

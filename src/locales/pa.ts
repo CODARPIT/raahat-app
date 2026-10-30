@@ -65,6 +65,7 @@ const pa: Dict = {
     live: "ਲਾਈਵ ਸਥਿਤੀ",
     updated: "{time} IST 'ਤੇ ਅੱਪਡੇਟ",
     liveOff: "ਲਾਈਵ ਡਾਟਾ ਉਪਲਬਧ ਨਹੀਂ",
+    openReportsLabel: "ਸਰਗਰਮ ਰਿਪੋਰਟਾਂ",
     bandCritical: "ਬਹੁਤ ਗੰਭੀਰ: ਜਾਨ ਨੂੰ ਖ਼ਤਰਾ",
     bandHigh: "ਗੰਭੀਰ: ਤੁਰੰਤ ਮਦਦ ਚਾਹੀਦੀ",
     bandModerate: "ਦਰਮਿਆਨਾ: ਨੁਕਸਾਨ, ਕੋਈ ਖ਼ਤਰੇ ਵਿੱਚ ਨਹੀਂ",

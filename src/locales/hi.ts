@@ -65,6 +65,7 @@ const hi: Dict = {
     live: "लाइव स्थिति",
     updated: "{time} IST पर अपडेट",
     liveOff: "लाइव डेटा उपलब्ध नहीं",
+    openReportsLabel: "सक्रिय रिपोर्ट",
     bandCritical: "अति गंभीर: जान को ख़तरा",
     bandHigh: "गंभीर: तुरंत मदद चाहिए",
     bandModerate: "मध्यम: नुक़सान, कोई ख़तरे में नहीं",

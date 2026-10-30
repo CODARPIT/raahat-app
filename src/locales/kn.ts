@@ -65,6 +65,7 @@ const kn: Dict = {
     live: "ನೇರ ಪರಿಸ್ಥಿತಿ",
     updated: "{time} IST ಕ್ಕೆ ನವೀಕರಿಸಲಾಗಿದೆ",
     liveOff: "ನೇರ ಮಾಹಿತಿ ಲಭ್ಯವಿಲ್ಲ",
+    openReportsLabel: "ಸಕ್ರಿಯ ವರದಿಗಳು",
     bandCritical: "ಅತಿ ಗಂಭೀರ: ಜೀವಕ್ಕೆ ಅಪಾಯ",
     bandHigh: "ಗಂಭೀರ: ತುರ್ತು ಸಹಾಯ ಬೇಕು",
     bandModerate: "ಮಧ್ಯಮ: ಹಾನಿ, ಯಾರೂ ಅಪಾಯದಲ್ಲಿಲ್ಲ",

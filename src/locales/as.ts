@@ -65,6 +65,7 @@ const asm: Dict = {
     live: "লাইভ পৰিস্থিতি",
     updated: "{time} IST-ত আপডেট",
     liveOff: "লাইভ তথ্য উপলব্ধ নহয়",
+    openReportsLabel: "সক্ৰিয় প্ৰতিবেদন",
     bandCritical: "অতি গুৰুতৰ: প্ৰাণৰ আশংকা",
     bandHigh: "গুৰুতৰ: তৎকাল সহায় লাগে",
     bandModerate: "মধ্যম: ক্ষতি, কোনো বিপদত নাই",

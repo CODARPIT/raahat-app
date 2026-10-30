@@ -65,6 +65,7 @@ const mr: Dict = {
     live: "थेट परिस्थिती",
     updated: "{time} IST ला अद्ययावत",
     liveOff: "थेट माहिती उपलब्ध नाही",
+    openReportsLabel: "सक्रिय अहवाल",
     bandCritical: "अतिगंभीर: जीवाला धोका",
     bandHigh: "गंभीर: तातडीची मदत हवी",
     bandModerate: "मध्यम: नुकसान, कोणी धोक्यात नाही",

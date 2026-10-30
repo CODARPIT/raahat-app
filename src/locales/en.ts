@@ -67,6 +67,7 @@ const en = {
     live: "Live situation",
     updated: "Updated {time} IST",
     liveOff: "Live data unavailable",
+    openReportsLabel: "Open reports",
     bandCritical: "Critical: life at risk",
     bandHigh: "High: urgent help needed",
     bandModerate: "Moderate: damage, no one in danger",
