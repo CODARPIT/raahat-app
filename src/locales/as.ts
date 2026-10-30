@@ -201,6 +201,8 @@ const asm: Dict = {
     tryNow: "এতিয়াই পঠিয়াই চাওক",
     duplicate: "এইটো আগতেই ৰিপ'ৰ্ট হৈছে; আপোনাৰ ফটো তাত যোগ কৰা হ'ল।",
     corroborated: "আৰু {n} জনে এইটো জনাইছে।",
+    incidentAreaLabel: "ঘটনা গোটৰ এলেকা: {radius} মিটাৰ।",
+    incidentLinked: "এই ঘটনাৰ সৈতে {n}টা প্ৰতিবেদন সংযুক্ত।",
   },
   check: {
     title: "ভাইৰেল ফটো পৰীক্ষা কৰক",

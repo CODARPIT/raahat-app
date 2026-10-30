@@ -50,6 +50,7 @@ export const NO_EMERGENCY_CAP = 15;
 
 export const REASON_NOT_REAL = "Looks like a screenshot, meme, drawing or photo of a screen";
 export const REASON_UNRELATED = "Doesn't look disaster-related";
+export const REASON_REUSED_PHOTO = "Same photo was reported outside the incident's matching area or time window";
 
 /** Reasons the AI itself gives for a human to double-check a photo. */
 export function aiReviewReasons(findings: Pick<VisionFindings, "isRealPhoto" | "isDisasterRelated">): string[] {
@@ -156,7 +157,7 @@ export function coarsen(value: number): number {
 
 /** Hamming distance between two hex perceptual hashes (Cloudinary returns 16 hex chars). */
 export function phashDistance(a: string, b: string): number {
-  if (a.length !== b.length) return Number.POSITIVE_INFINITY;
+  if (a.length !== b.length || !/^[0-9a-f]+$/i.test(a) || !/^[0-9a-f]+$/i.test(b)) return Number.POSITIVE_INFINITY;
   let dist = 0;
   for (let i = 0; i < a.length; i++) {
     let x = parseInt(a[i], 16) ^ parseInt(b[i], 16);
@@ -200,6 +201,12 @@ export interface Candidate {
   categories?: Category[];
   createdAt: string;
   duplicateOf: string | null;
+  score?: number;
+  /** A member photo uses its incident anchor's current matching boundary. */
+  incidentLat?: number;
+  incidentLng?: number;
+  incidentRadiusM?: number | null;
+  incidentCreatedAt?: string;
 }
 
 export interface MatchResult {
@@ -210,36 +217,55 @@ export interface MatchResult {
 }
 
 export const DUPLICATE_PHASH_MAX = 10; // of 64 bits
-export const DUPLICATE_RADIUS_M = 2000; // forwarded photos often carry a different GPS fix
 export const INCIDENT_RADIUS_M = 300;
 export const INCIDENT_WINDOW_H = 12;
 
-type Incoming = Omit<Candidate, "publicId" | "duplicateOf">;
-
-/** Distance in metres, or null if either side has no location yet. */
-function distance(a: Pick<Candidate, "lat" | "lng">, b: Pick<Candidate, "lat" | "lng">): number | null {
-  if (a.lat === null || a.lng === null || b.lat === null || b.lng === null) return null;
-  return haversineMeters(a.lat, a.lng, b.lat, b.lng);
+/** A bounded matching heuristic, not a disaster's physical impact extent. */
+export function incidentRadiusForScore(score: number): number {
+  const s = Number.isFinite(score) ? Math.min(100, Math.max(0, score)) : 0;
+  const metres = s >= 70 ? 400 + (s - 70) / 30 * 400
+    : s >= 45 ? 200 + (s - 45) / 25 * 200
+    : s >= 25 ? 100 + (s - 25) / 20 * 100 : 75;
+  return Math.round(metres / 25) * 25;
 }
 
-/** Same kind of incident: any hazard in common, e.g. "trapped" on a roof and "flood" in the street. */
-function sameIncidentKind(a: Pick<Candidate, "primaryCategory" | "categories">, b: Pick<Candidate, "primaryCategory" | "categories">): boolean {
-  const kinds = new Set(a.categories ?? [a.primaryCategory]);
-  return (b.categories ?? [b.primaryCategory]).some((k) => k !== "no_emergency" && kinds.has(k));
+type Incoming = Pick<Candidate, "lat" | "lng" | "phash" | "primaryCategory" | "categories" | "createdAt">;
+
+/** Distance in metres, or null if either side has no location yet. */
+function distance(a: Pick<Candidate, "lat" | "lng">, b: Pick<Candidate, "lat" | "lng" | "incidentLat" | "incidentLng">): number | null {
+  const lat = b.incidentLat ?? b.lat;
+  const lng = b.incidentLng ?? b.lng;
+  if (a.lat === null || a.lng === null || lat === null || lng === null) return null;
+  return haversineMeters(a.lat, a.lng, lat, lng);
+}
+
+function candidateRadius(candidate: Candidate) {
+  return candidate.incidentRadiusM ?? (candidate.score === undefined ? INCIDENT_RADIUS_M : incidentRadiusForScore(candidate.score));
+}
+
+/** A primary hazard must be shared; collateral damage alone cannot join cases. */
+export function sameIncidentKind(a: Pick<Candidate, "primaryCategory" | "categories">, b: Pick<Candidate, "primaryCategory" | "categories">): boolean {
+  if (a.primaryCategory === "no_emergency" || b.primaryCategory === "no_emergency") return false;
+  const aKinds = new Set([...(a.categories ?? []), a.primaryCategory]);
+  const bKinds = new Set([...(b.categories ?? []), b.primaryCategory]);
+  return aKinds.has(b.primaryCategory) || bKinds.has(a.primaryCategory);
 }
 
 export function matchReport(incoming: Incoming, existing: Candidate[]): MatchResult {
-  const primaries = existing.filter((c) => !c.duplicateOf);
+  const primaries = existing.filter((c) => !c.duplicateOf && Number.isFinite(Date.parse(c.createdAt)));
   const t = Date.parse(incoming.createdAt);
+  if (!Number.isFinite(t)) return { duplicateOf: null, corroborates: [] };
 
-  // 1. Near-identical image nearby → duplicate of the oldest match. Forwarded photos
-  //    usually arrive without a location, so a missing location doesn't block a merge.
+  // 1. Near-identical recent image inside the same matching radius → duplicate.
+  //    An unlocated copy can be identified as the same image, but cannot corroborate
+  //    or join an incident until it has a location.
   if (incoming.phash) {
     const dupes = primaries
       .filter((c) => {
         if (!c.phash || phashDistance(incoming.phash!, c.phash) > DUPLICATE_PHASH_MAX) return false;
+        if (Math.abs(t - Date.parse(c.incidentCreatedAt ?? c.createdAt)) > INCIDENT_WINDOW_H * 3600_000) return false;
         const d = distance(incoming, c);
-        return d === null || d <= DUPLICATE_RADIUS_M;
+        return d === null || d <= candidateRadius(c);
       })
       .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
     if (dupes.length) return { duplicateOf: dupes[0].publicId, corroborates: [] };
@@ -252,7 +278,7 @@ export function matchReport(incoming: Incoming, existing: Candidate[]): MatchRes
     .filter((c) => {
       if (!sameIncidentKind(incoming, c)) return false;
       const d = distance(incoming, c);
-      return d !== null && d <= INCIDENT_RADIUS_M && Math.abs(t - Date.parse(c.createdAt)) <= INCIDENT_WINDOW_H * 3600_000;
+      return d !== null && d <= candidateRadius(c) && Math.abs(t - Date.parse(c.incidentCreatedAt ?? c.createdAt)) <= INCIDENT_WINDOW_H * 3600_000;
     })
     .map((c) => c.publicId);
   return { duplicateOf: null, corroborates };
