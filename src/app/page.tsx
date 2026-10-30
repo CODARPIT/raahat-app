@@ -53,7 +53,7 @@ export default async function Home() {
     { icon: ICON.check, title: t.sCheckT, text: t.sCheck, href: "/check", cta: t.sCheckC },
     { icon: ICON.shield, title: t.sControlT, text: t.sControl, href: "/respond", cta: t.sControlC },
     { icon: ICON.book, title: t.sSafetyT, text: t.sSafety, href: "/safety", cta: t.sSafetyC },
-    { icon: ICON.chat, title: t.sTelegramT, text: t.sTelegram, href: bot ? "#telegram" : "/help", cta: bot ? t.sTelegramC : t.sTelegramSoon },
+    { icon: ICON.chat, title: t.sTelegramT, text: t.sTelegram, href: bot ? "#telegram" : "/report", cta: bot ? t.sTelegramC : t.sTelegramSoon },
   ];
   const bands = [
     { sev: "critical", key: "bandCritical" }, { sev: "high", key: "bandHigh" },
@@ -74,14 +74,9 @@ export default async function Home() {
         </div>
 
         <div className="portal-workspace">
-          <aside className="portal-panel portal-services" aria-labelledby="services-h">
-            <h2 className="portal-panel-title" id="services-h">{t.services}</h2>
-            <ul>{services.map((s) => <li key={s.title}><Link href={s.href}><Icon d={s.icon} /><span>{s.title}</span><span aria-hidden>›</span></Link></li>)}</ul>
-            <Link className="portal-help" href="/help"><span aria-hidden>?</span>{dict.nav.help} <span aria-hidden>→</span></Link>
-          </aside>
-          <PortalBanner label={t.services} slides={[
-            { tab: dict.nav.home, title: t.title, text: t.lead, action: t.ctaReport, href: "/report" },
+          <PortalBanner label={t.services} mapUnavailableLabel={t.liveOff} reportCountLabel={t.openReportsLabel} slides={[
             { tab: dict.nav.map, title: t.sMapT, text: t.sMap, action: t.sMapC, href: "/map" },
+            { tab: dict.nav.home, title: t.title, text: t.lead, action: t.ctaReport, href: "/report" },
             { tab: dict.nav.check, title: t.fcTitle, text: t.sCheck, action: t.fcCheck, href: "/check" },
           ]} />
           <aside className="portal-panel portal-situation" aria-labelledby="situation-h">
@@ -92,12 +87,14 @@ export default async function Home() {
               <dd className="num">{live ? counts[b.sev] : "—"}</dd>
             </div>)}</dl>
             <p className="portal-status"><span className={`live-dot${live ? "" : " off"}`}>{live ? fmt(t.updated, { time: updated }) : t.liveOff}</span></p>
+            <a className="portal-emergency" href="tel:112"><span><strong>{dict.access.emergency}</strong><span>{dict.header.inDanger}</span></span><strong className="num">112 <ExternalArrow /></strong></a>
           </aside>
         </div>
 
-        <div className="portal-capabilities">
-          {[{ n: "14", label: t.stat1 }, { n: "2G", label: t.priv4T.replace(/[:：]$/u, "") }, { n: String(LOCALES.length), label: t.stat4 }, { n: "112", label: dict.access.emergency }].map((item) => <div key={item.n}><strong className="num">{item.n}</strong><span>{item.label}</span></div>)}
-        </div>
+        <section className="portal-quick-services" aria-labelledby="services-h">
+          <div className="portal-section-heading"><h2 id="services-h">{t.services}</h2><Link className="portal-text-link" href="/help">{dict.nav.help} <span aria-hidden>→</span></Link></div>
+          <ul>{services.map((s, i) => <li key={s.title}><Link href={s.href} className={i === 0 ? "primary-service" : undefined}><span className="quick-service-icon"><Icon d={s.icon} /></span><span className="quick-service-title">{s.title}</span><span className="quick-service-action">{s.cta}<span aria-hidden>→</span></span></Link></li>)}</ul>
+        </section>
 
         <div className="portal-information">
           <section className="portal-panel portal-about" aria-labelledby="about-h">
@@ -130,6 +127,11 @@ export default async function Home() {
           ].map((step, i) => <li key={step.title}><span className="portal-step-number" aria-hidden>{String(i + 1).padStart(2, "0")}</span><h3>{step.title}</h3><p>{step.text}</p></li>)}</ol>
         </div>
       </section>
+      <div className="portal-container">
+        <div className="portal-capabilities">
+          {[{ n: "14", label: t.stat1 }, { n: "2G", label: t.priv4T.replace(/[:：]$/u, "") }, { n: String(LOCALES.length), label: t.stat4 }, { n: "112", label: dict.access.emergency }].map((item) => <div key={item.n}><strong className="num">{item.n}</strong><span>{item.label}</span></div>)}
+        </div>
+      </div>
       <div className="portal-container portal-bottom">
         <section className="portal-panel" id="privacy" aria-labelledby="privacy-h">
           <h2 className="portal-panel-title" id="privacy-h">{t.privTitle}</h2>

@@ -4,8 +4,10 @@
 import "leaflet/dist/leaflet.css";
 import { useEffect } from "react";
 import { divIcon } from "leaflet";
-import { CircleMarker, MapContainer, Marker, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
+import type { GeoJsonObject } from "geojson";
+import { CircleMarker, GeoJSON, MapContainer, Marker, Pane, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import { isLocated, type Report } from "@/lib/types";
+import regionalOverview from "@/lib/regional-overview.json";
 
 const COLOR = { critical: "#b3122e", high: "#c98200", moderate: "#3f7690", low: "#7c8b87" } as const;
 const RADIUS = { critical: 13, high: 10, moderate: 8, low: 6 } as const;
@@ -45,9 +47,13 @@ export interface MapViewProps {
   /** Crosshair cursor while a coordinator is placing a pin. */
   picking?: boolean;
   center?: [number, number];
+  zoom?: number;
+  scrollWheelZoom?: boolean;
+  /** Local geography underneath raster tiles, so the homepage also works offline. */
+  regionalOverview?: boolean;
 }
 
-export default function MapView({ reports = [], selectedId, onSelect, onPick, pin, suggested, picking, center }: MapViewProps) {
+export default function MapView({ reports = [], selectedId, onSelect, onPick, pin, suggested, picking, center, zoom = 12, scrollWheelZoom = true, regionalOverview: showRegionalOverview = false }: MapViewProps) {
   const located = reports.filter(isLocated);
   const selected = located.find((r) => r.publicId === selectedId);
   const start: [number, number] =
@@ -56,11 +62,14 @@ export default function MapView({ reports = [], selectedId, onSelect, onPick, pi
   return (
     <MapContainer
       center={start}
-      zoom={12}
+      zoom={zoom}
       style={{ height: "100%", width: "100%", cursor: picking ? "crosshair" : undefined }}
       className={picking ? "map-picking" : undefined}
-      scrollWheelZoom
+      scrollWheelZoom={scrollWheelZoom}
     >
+      {showRegionalOverview && <Pane name="regional-overview" style={{ zIndex: 150 }}>
+        <GeoJSON data={regionalOverview as GeoJsonObject} interactive={false} style={{ color: "#9fb5ae", weight: 1, fillColor: "#d4e2d6", fillOpacity: 1 }} attribution='Regional overview: <a href="https://www.naturalearthdata.com/">Natural Earth</a>' />
+      </Pane>}
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
