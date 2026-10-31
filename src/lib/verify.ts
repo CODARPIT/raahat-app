@@ -18,9 +18,17 @@ export interface Check {
   result: "pass" | "fail" | "open";
 }
 
+/** One row of the public "Check performed / Result" table. */
+export interface CheckRow {
+  check: string;
+  result: string;
+  tone: "good" | "bad" | "open";
+}
+
 export interface FactCheck {
   verdict: Verdict;
   checks: Check[];
+  table: CheckRow[];
   verifiedAt: string | null; // ISO, the control room's first confirming action
 }
 
@@ -47,7 +55,32 @@ export function factCheck(r: Pick<Report, "status" | "history" | "reviewReasons"
       : { label: "No other reports of this incident yet", result: "open" },
     verdict !== "pending" ? { label: "Checked by a control-room responder", result: "pass" } : { label: "Not checked by a control-room responder yet", result: "open" },
   ];
-  return { verdict, checks, verifiedAt: verdict === "verified" ? confirmed!.at : null };
+  const yesNo = (check: string, bad: boolean): CheckRow => ({ check, result: bad ? "Yes" : "No", tone: bad ? "bad" : "good" });
+  const table: CheckRow[] = [
+    {
+      check: "Confirmed by a control-room responder",
+      result: verdict === "verified" ? "Yes" : verdict === "false" ? "Found false" : "Not yet",
+      tone: verdict === "verified" ? "good" : verdict === "false" ? "bad" : "open",
+    },
+    { check: "Other reports of the same incident nearby", result: others > 0 ? String(others) : "None yet", tone: others > 0 ? "good" : "open" },
+    yesNo("Matches a known old disaster photo", has("Matches an older photo")),
+    yesNo("Camera date older than the report", has("Photo taken on")),
+    { check: "AI image check: signs of AI generation", ...aiImageResult(r.imageReview) },
+    yesNo("Screenshot, meme or photo of a screen", has(REASON_NOT_REAL)),
+    { check: "Shows an emergency or disaster scene", result: has(REASON_UNRELATED) ? "No" : "Yes", tone: has(REASON_UNRELATED) ? "bad" : "good" },
+  ];
+  return { verdict, checks, table, verifiedAt: verdict === "verified" ? confirmed!.at : null };
+}
+
+/** The delayed AI-image check, for the public table: never the model's explanation. */
+function aiImageResult(ir: Report["imageReview"] | undefined): Omit<CheckRow, "check"> {
+  if (!ir || ir.state === "not_assessed" || ir.state === "unavailable") return { result: "Not available", tone: "open" };
+  if (ir.state === "pending") return { result: "Check running", tone: "open" };
+  if (ir.state === "clear") return { result: "None seen*", tone: "good" };
+  if (ir.state === "inconclusive") return { result: "Inconclusive*", tone: "open" };
+  return ir.acceptedAt
+    ? { result: "Questions raised; a responder reviewed and accepted the photo*", tone: "open" }
+    : { result: "Questions raised; a responder is reviewing the photo*", tone: "open" };
 }
 
 /** Short, URL-safe id for a report: its public ID without the reports folder. */

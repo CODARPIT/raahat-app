@@ -71,14 +71,16 @@ export default async function FactCheckPage({ params }: { params: Promise<{ id: 
   const showPhoto = fc.verdict !== "pending";
   const download = card(r, fc, id, true);
 
+  const stamp = fc.verdict === "verified" ? ["VERIFIED", "✔"] : fc.verdict === "false" ? ["FALSE", "✕"] : ["NOT YET", "VERIFIED"];
+
   return (
-    <InfoPage title="Fact check" titleHi="तथ्य जाँच">
-      <section className={`verdict verdict-${fc.verdict}`} aria-labelledby="verdict-h">
-        <span className="verdict-icon" aria-hidden>{fc.verdict === "verified" ? "✓" : fc.verdict === "false" ? "✕" : "…"}</span>
+    <InfoPage title={`Verification Status · RHT-${id}`} crumb="Fact check">
+      <section className={`fc-stamp fc-${fc.verdict}`} aria-labelledby="verdict-h">
+        <span className="fc-seal" aria-hidden>{stamp[0]}<br />{stamp[1]}</span>
         <div>
           <h2 id="verdict-h">{label.en}</h2>
           <p lang="hi">{label.hi}</p>
-          <p className="verdict-id">Raahat report <span className="num">{id}</span></p>
+          <p className="fc-when">{fc.verifiedAt ? `Checked ${istDate(fc.verifiedAt)} IST` : `Reported ${istDate(r.createdAt)} IST`}</p>
         </div>
       </section>
 
@@ -94,26 +96,17 @@ export default async function FactCheckPage({ params }: { params: Promise<{ id: 
         </p>
       )}
 
-      <div className={showPhoto ? "fact-grid" : undefined}>
-        {showPhoto && (
-          <figure className={`fact-photo${fc.verdict === "false" ? " is-false" : ""}`}>
+      <div className="fc-report">
+        {showPhoto ? (
+          <figure className={`fc-photo${fc.verdict === "false" ? " is-false" : ""}`}>
             <img src={enhancedUrl(r, true)} alt={`Photo from the report, faces pixelated: ${r.summary}`} />
-            <figcaption>Faces pixelated by Raahat.</figcaption>
           </figure>
+        ) : (
+          <div className="fc-photo fc-photo-hidden"><span>The photo is shown once the control room has checked it</span></div>
         )}
-        <dl className="fact-details">
-          <dt>What</dt>
-          <dd>{CATEGORY_LABEL[r.primaryCategory]}{showPhoto && r.summary ? `. ${r.summary}` : ""}</dd>
-          <dt>Reported</dt>
-          <dd>{istDate(r.createdAt)} IST, via {CHANNEL_LABEL[r.channel]}</dd>
-          {fc.verifiedAt && (
-            <>
-              <dt>Verified</dt>
-              <dd>{istDate(fc.verifiedAt)} IST</dd>
-            </>
-          )}
-          <dt>Where</dt>
-          <dd>
+        <div className="fc-facts">
+          <p className="fc-what"><strong>{CATEGORY_LABEL[r.primaryCategory]}</strong>{showPhoto && r.summary ? `: ${r.summary}` : ""}</p>
+          <p>
             {isLocated(r) ? (
               <>
                 About{" "}
@@ -125,34 +118,42 @@ export default async function FactCheckPage({ params }: { params: Promise<{ id: 
             ) : (
               "Location not confirmed yet"
             )}
-          </dd>
-          <dt>Reports of this incident</dt>
-          <dd className="num">{r.corroborations + 1}</dd>
-        </dl>
+          </p>
+          <p className="muted">Reported {istDate(r.createdAt)} IST via {CHANNEL_LABEL[r.channel]} · faces pixelated</p>
+        </div>
       </div>
 
-      <h2>What Raahat checked</h2>
-      <ul className="fact-checks">
-        {fc.checks.map((c) => (
-          <li key={c.label} className={c.result}>
-            <span aria-hidden>{c.result === "pass" ? "✓" : c.result === "fail" ? "✕" : "–"}</span> {c.label}
-            <span className="sr-only">{c.result === "pass" ? " (passed)" : c.result === "fail" ? " (failed)" : " (not yet)"}</span>
-          </li>
-        ))}
-      </ul>
+      <table className="fc-table" aria-label="Checks performed">
+        <thead><tr><th scope="col">Check performed</th><th scope="col">Result</th></tr></thead>
+        <tbody>
+          {fc.table.map((row) => (
+            <tr key={row.check}>
+              <td>{row.check}</td>
+              <td className={`fc-${row.tone}`}>{row.result}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="fc-foot">* Automated checks look for visible warning signs. They are not proof that a photo is genuine; the final decision is taken by a person.</p>
 
-      <h2>Share this check</h2>
-      <ShareBar url={url} text={`${label.en}: ${CATEGORY_LABEL[r.primaryCategory]} (Raahat fact check)`} cardUrl={download ?? undefined} />
+      <section className="fc-box" aria-labelledby="share-h">
+        <h2 id="share-h" className="fc-boxh">Share this fact check</h2>
+        <div className="fc-box-pad">
+          <ShareBar url={url} text={`${label.en}: ${CATEGORY_LABEL[r.primaryCategory]} (Raahat fact check)`} cardUrl={download ?? undefined} />
+        </div>
+        <p className="fc-box-foot">Every Raahat card links to a page like this. If a card&rsquo;s link doesn&rsquo;t open a matching page, the card is fake.</p>
+      </section>
 
       <section className="fact-howto" aria-labelledby="howto-h">
         <h2 id="howto-h">How to tell a Raahat post is genuine</h2>
-        <ul>
+        <ul className="gov-list">
           <li>Every Raahat card carries a link to <strong>{SITE_URL.replace(/^https?:\/\//, "")}/v/…</strong>. Open it: if it doesn&rsquo;t show a page like this one with the same verdict, the card is fake.</li>
           <li>Raahat never asks for money, OTPs or personal details.</li>
           <li>Raahat is a citizen project, not an official government service. For official updates follow NDMA, IMD and your district administration.</li>
-          <li>Seen a viral photo? <Link href="/check">Check it here</Link>.</li>
         </ul>
       </section>
+
+      <p className="fc-another"><Link href="/check">» Check another viral photo</Link></p>
     </InfoPage>
   );
 }

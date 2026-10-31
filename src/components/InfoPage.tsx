@@ -12,11 +12,14 @@ export const LAST_REVIEWED = "31 October 2026";
 export async function InfoPage({
   title,
   titleHi,
+  crumb,
   translated = false,
   children,
 }: {
   title: string;
   titleHi?: string;
+  /** Breadcrumb label when it differs from the title. */
+  crumb?: string;
   translated?: boolean;
   children: React.ReactNode;
 }) {
@@ -28,7 +31,7 @@ export async function InfoPage({
           <nav className="crumbs" aria-label="Breadcrumb">
             <ol>
               <li><Link href="/">{t.nav.home}</Link></li>
-              <li aria-current="page">{title}</li>
+              <li aria-current="page">{crumb ?? title}</li>
             </ol>
           </nav>
           <h1>

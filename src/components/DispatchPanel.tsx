@@ -9,8 +9,10 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MapPoint } from "@/components/DispatchMap";
 import { assignAll, DEMO_CENTRES, RULES, UNIT_LABEL, type Assignment, type DispatchReport, type UnitType } from "@/lib/dispatch";
-import { rowFromReport, UNIT_ICON, type DispatchRow } from "@/lib/dispatch-rows";
+import { rowFromReport, type DispatchRow } from "@/lib/dispatch-rows";
 import type { Report, Severity } from "@/lib/types";
+import { shortId } from "@/lib/verify";
+import { Tile } from "@/components/ControlShell";
 
 const DispatchMap = dynamic(() => import("@/components/DispatchMap"), {
   ssr: false,
@@ -26,12 +28,37 @@ const NEW_FOR_MS = 10_000; // how long a newly arrived report stays highlighted
 const SEV_LABEL: Record<Severity, string> = { critical: "Critical", high: "High", moderate: "Moderate", low: "Low" };
 const place = (id: string | null) => DEMO_CENTRES.find((c) => c.id === id)?.name.replace(" (demo)", "") ?? "";
 const clock = (ms: number) => new Date(ms).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour12: false });
+const refNo = (id: string) => (id.startsWith("demo-") ? id.toUpperCase() : `RHT-${shortId(id)}`);
+const UNITS: UnitType[] = ["ambulance", "fire", "rescue"];
 
-function UnitIcon({ unit }: { unit: UnitType }) {
+/** The rules from RULES, as a register table. */
+function RulesTable() {
+  const rows: { sev: Severity; pick: string }[] = [
+    { sev: "critical", pick: "Nearest free unit, sent at once; may take over a unit from a less urgent call" },
+    { sev: "high", pick: "Nearest centre that can spare a unit" },
+    { sev: "moderate", pick: "Nearest centre that can spare one, often further away" },
+    { sev: "low", pick: "Nearest centre with plenty to spare" },
+  ];
   return (
-    <svg className="dispatch-unit-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={UNIT_ICON[unit]} />
-    </svg>
+    <section className="cr-box" aria-labelledby="rules-h">
+      <h2 id="rules-h" className="cr-boxh"><span>Dispatch Rules</span></h2>
+      <div className="cr-scroll">
+        <table className="cr-table">
+          <thead><tr><th>Priority</th><th>Centre selected</th><th>Maximum distance</th><th>Units kept free at the centre</th><th>Sent before verification</th></tr></thead>
+          <tbody>
+            {rows.map(({ sev, pick }) => (
+              <tr key={sev}>
+                <td><span className="cr-pr" data-sev={sev}>{SEV_LABEL[sev].toUpperCase()}</span></td>
+                <td>{pick}</td>
+                <td>{Number.isFinite(RULES[sev].maxKm) ? `${RULES[sev].maxKm} km` : "No limit"}</td>
+                <td className="num">{RULES[sev].keepFree}</td>
+                <td>{sev === "critical" ? "Yes" : "No, after a responder verifies it"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
@@ -105,6 +132,7 @@ function Board({ rows, startOf, msPerMin, estimate, fresh, seedFeed }: {
   const [active, setActive] = useState<string | null>(null);
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [recent, setRecent] = useState<Map<string, number>>(new Map());
+  const [redirected, setRedirected] = useState<Map<string, string>>(new Map());
   const { assignments, centres } = useMemo(() => assignAll(rows), [rows]);
   const byId = useMemo(() => new Map(rows.map((r) => [r.publicId, r])), [rows]);
 
@@ -133,6 +161,7 @@ function Board({ rows, startOf, msPerMin, estimate, fresh, seedFeed }: {
     const t = Date.now();
     const items: FeedItem[] = [];
     const born: string[] = [];
+    const moved: [string, string][] = [];
     if (last.current === null) {
       if (seedFeed) {
         // Start with what was sent most recently, newest first.
@@ -153,6 +182,7 @@ function Board({ rows, startOf, msPerMin, estimate, fresh, seedFeed }: {
           const next = a.state === "assigned" ? `${help} is on its way.` : a.state === "queued" ? `No ${UNIT_LABEL[a.unit].toLowerCase()} free yet; queued.` : "Waiting for verification.";
           items.push({ key: `new-${a.publicId}-${t}`, at: t, sev: a.severity, text: `New ${SEV_LABEL[a.severity]} report: ${r.title}. ${next}` });
         } else if (a.state === "assigned" && before.centreId !== a.centreId) {
+          if (before.centreId) moved.push([a.publicId, before.centreId]);
           items.push({
             key: `move-${a.publicId}-${a.centreId}-${t}`,
             at: t,
@@ -170,6 +200,7 @@ function Board({ rows, startOf, msPerMin, estimate, fresh, seedFeed }: {
     last.current = new Map(assignments.map((a) => [a.publicId, { a, title: byId.get(a.publicId)?.title ?? "" }]));
     push(items);
     if (born.length) setRecent((m) => new Map([...m, ...born.map((id) => [id, t] as [string, number])]));
+    if (moved.length) setRedirected((m) => new Map([...m, ...moved]));
   }, [assignments, byId, seedFeed, push]);
 
   // Arrivals: log each unit the moment its estimated drive ends.
@@ -225,123 +256,133 @@ function Board({ rows, startOf, msPerMin, estimate, fresh, seedFeed }: {
 
   return (
     <>
-      <dl className="dispatch-counts">
-        <div><dt>On the way</dt><dd className="num">{onTheWay}</dd></div>
-        <div><dt>On scene</dt><dd className="num">{onScene}</dd></div>
-        <div><dt>Waiting for a free unit</dt><dd className="num">{queued}</dd></div>
-        <div><dt>Waiting for verification</dt><dd className="num">{waiting.length}</dd></div>
-      </dl>
+      <div className="cr-tiles cr-tiles-4">
+        <Tile n={onTheWay} label="Units on the way" color="#B45309" icon="dispatch" />
+        <Tile n={onScene} label="Units on scene" color="#138808" icon="check" />
+        <Tile n={queued} label="Waiting for a free unit" color="#B3122E" icon="clock" />
+        <Tile n={waiting.length} label="Awaiting verification" color="#123D73" icon="shield" />
+      </div>
 
-      <div className="dispatch-layout">
-        <div className="dispatch-map" role="region" aria-label="Map of response centres, reports and units on the way">
-          <DispatchMap centres={centreLoad} points={points} active={active} onActive={setActive} />
-        </div>
+      <RulesTable />
 
-        <div className="dispatch-side">
-          <section className="dispatch-feed" aria-labelledby="feed-h">
-            <h2 id="feed-h"><span className="live-pulse" aria-hidden="true" /> Activity</h2>
-            <ol aria-live="polite">
-              {feed.length === 0 && <li className="hint">Nothing yet. New reports and units appear here as they happen.</li>}
-              {feed.map((f) => (
-                <li key={f.key}>
-                  <time className="num">{clock(f.at)}</time>
-                  <span className="feed-dot" data-sev={f.sev ?? "none"} aria-hidden="true" />
-                  <span>{f.text}</span>
-                </li>
-              ))}
-            </ol>
-          </section>
+      <div className="cr-grid cr-grid-dispatch">
+        <section className="cr-box" aria-labelledby="map-h">
+          <h2 id="map-h" className="cr-boxh"><span>Unit Movement Map</span> <small>{estimate ? "Positions and ETAs estimated from distance" : "Sample data"}</small></h2>
+          <div className="dispatch-map cr-dmap" role="region" aria-label="Map of response centres, reports and units on the way">
+            <DispatchMap centres={centreLoad} points={points} active={active} onActive={setActive} />
+          </div>
+        </section>
 
-          <ol className="dispatch-cards" aria-label="Who sends help">
-            {moving.length === 0 && <li className="dispatch-empty">No report needs a unit right now.</li>}
-            {moving.map((a, i) => {
-              const r = byId.get(a.publicId)!;
-              const isNew = a.publicId === fresh || now - (recent.get(a.publicId) ?? -Infinity) < NEW_FOR_MS;
-              const tr = a.state === "assigned" ? trip(a) : null;
-              const there = tr !== null && tr.p >= 1;
-              return (
-                <li
-                  key={a.publicId}
-                  className={`dispatch-card${isNew ? " is-new" : ""}${a.publicId === active ? " is-active" : ""}`}
-                  onMouseEnter={() => setActive(a.publicId)}
-                  onMouseLeave={() => setActive(null)}
-                >
-                  <span className="dispatch-card-num" data-sev={a.severity} aria-hidden="true">{i + 1}</span>
-                  <div className="dispatch-card-body">
-                    <p className="dispatch-card-tags">
-                      <span className="sev sev-text" data-sev={a.severity}>{SEV_LABEL[a.severity]}</span>
-                      {isNew && <span className="dispatch-tag tag-new">New</span>}
-                      {there && <span className="dispatch-tag tag-onscene">On scene</span>}
-                      {a.unverified && <span className="dispatch-tag tag-unverified">Sent before verification</span>}
-                    </p>
-                    <h3>{r.title}</h3>
-                    <p className="dispatch-card-where">{r.kind}</p>
-                    {tr ? (
-                      <div className={`dispatch-card-help${there ? " is-there" : ""}`}>
-                        <UnitIcon unit={a.unit} />
-                        <span>
-                          <strong>{UNIT_LABEL[a.unit]} from {place(a.centreId)}</strong>
-                          <span>
-                            {there
-                              ? `Reached the scene${estimate ? " (estimated)" : ""} · ${a.km} km`
-                              : `${a.km} km · about ${tr.minsLeft} min to go${estimate ? " (estimated)" : ""}`}
-                          </span>
-                          <span className="dispatch-progress" aria-hidden="true"><span style={{ width: `${Math.round(tr.p * 100)}%` }} /></span>
-                        </span>
-                      </div>
-                    ) : (
-                      <p className="dispatch-card-help is-queued">
-                        <UnitIcon unit={a.unit} />
-                        <span><strong>Waiting for a free {UNIT_LABEL[a.unit].toLowerCase()}</strong></span>
-                      </p>
-                    )}
-                    <p className="dispatch-card-why"><span>Why:</span> {a.reason}</p>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        </div>
+        <section className="cr-box" aria-labelledby="assign-h">
+          <h2 id="assign-h" className="cr-boxh"><span>Assignments</span> <small>numbers match the map</small></h2>
+          <div className="cr-scroll">
+            <table className="cr-table">
+              <thead><tr><th>S.No.</th><th>Ref. No.</th><th>Priority</th><th>Unit / From centre</th><th>Dist.</th><th>ETA</th><th>Status</th><th>Reason for selection</th></tr></thead>
+              <tbody>
+                {moving.map((a, i) => {
+                  const r = byId.get(a.publicId)!;
+                  const isNew = a.publicId === fresh || now - (recent.get(a.publicId) ?? -Infinity) < NEW_FOR_MS;
+                  const tr = a.state === "assigned" ? trip(a) : null;
+                  const there = tr !== null && tr.p >= 1;
+                  const was = redirected.get(a.publicId);
+                  return (
+                    <tr
+                      key={a.publicId}
+                      className={[isNew ? "is-new" : "", a.publicId === active ? "sel" : ""].join(" ").trim() || undefined}
+                      onMouseEnter={() => setActive(a.publicId)}
+                      onMouseLeave={() => setActive(null)}
+                    >
+                      <td className="num"><span className="cr-n" data-sev={a.severity}>{i + 1}</span></td>
+                      <td className="cr-ref">{refNo(a.publicId)}<small className="cr-clamp" title={r.title}>{r.title}</small></td>
+                      <td><span className="cr-pr" data-sev={a.severity}>{SEV_LABEL[a.severity].toUpperCase()}</span></td>
+                      <td><strong>{UNIT_LABEL[a.unit]}</strong><small>{tr ? place(a.centreId) : "No centre free yet"}</small></td>
+                      <td className="num">{a.km !== null ? `${a.km} km` : "—"}</td>
+                      <td className="num">{tr && !there ? `${tr.minsLeft} min` : "—"}</td>
+                      <td>
+                        <span className="cr-st" data-st={there ? "scene" : tr ? "way" : "queued"}>{there ? "On scene" : tr ? "On the way" : "Waiting"}</span>
+                        {tr && !there && <span className="dispatch-progress" aria-hidden="true"><span style={{ width: `${Math.round(tr.p * 100)}%` }} /></span>}
+                        {isNew && <small className="cr-new">New</small>}
+                        {a.unverified && <small className="cr-red">Before verification</small>}
+                        {was && tr && was !== a.centreId && <small className="cr-amber">Redirected (was {place(was)})</small>}
+                      </td>
+                      <td>{a.reason}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {moving.length === 0 && <p className="cr-empty">No report needs a unit right now.</p>}
+          </div>
+        </section>
       </div>
 
       {waiting.length > 0 && (
-        <section className="dispatch-waiting" aria-labelledby="waiting-h">
-          <h2 id="waiting-h">Waiting for verification ({waiting.length})</h2>
-          <p className="hint">High, Moderate and Low reports get a unit once a responder verifies them in the <a href="/respond">control room</a>.</p>
-          <ul>
-            {waiting.map((a) => (
-              <li key={a.publicId}><span className="sev sev-text" data-sev={a.severity}>{SEV_LABEL[a.severity]}</span> {byId.get(a.publicId)?.title}</li>
-            ))}
-          </ul>
+        <section className="cr-box" aria-labelledby="waiting-h">
+          <h2 id="waiting-h" className="cr-boxh"><span>Awaiting Verification ({waiting.length})</span> <a href="/respond">Open control room »</a></h2>
+          <p className="cr-box-note">High, Moderate and Low reports get a unit as soon as a responder verifies them.</p>
+          <div className="cr-scroll">
+            <table className="cr-table">
+              <thead><tr><th>Ref. No.</th><th>Priority</th><th>Report</th><th>Unit needed</th></tr></thead>
+              <tbody>
+                {waiting.map((a) => (
+                  <tr key={a.publicId}>
+                    <td className="cr-ref">{refNo(a.publicId)}</td>
+                    <td><span className="cr-pr" data-sev={a.severity}>{SEV_LABEL[a.severity].toUpperCase()}</span></td>
+                    <td>{byId.get(a.publicId)?.title}<small>{byId.get(a.publicId)?.kind}</small></td>
+                    <td>{UNIT_LABEL[a.unit]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
-      <section className="dispatch-centres" aria-labelledby="centres-h">
-        <h2 id="centres-h">Units at each centre</h2>
-        <p className="hint"><span className="pip is-free" aria-hidden="true" /> free <span className="pip" aria-hidden="true" /> out on a call. Centres are demo stations, not real ones.</p>
-        <ul>
-          {centres.map(({ centre, free }) => (
-            <li key={centre.id}>
-              <h3>{place(centre.id)}</h3>
-              {(["ambulance", "fire", "rescue"] as UnitType[]).map((u) => (
-                <p key={u}>
-                  <span className="dispatch-centre-unit">{UNIT_LABEL[u]}</span>
-                  <span className="pips" aria-label={`${free[u]} of ${centre.units[u]} free`}>
-                    {Array.from({ length: centre.units[u] }, (_, k) => <span key={k} className={`pip${k < free[u] ? " is-free" : ""}`} />)}
-                  </span>
-                </p>
-              ))}
-            </li>
-          ))}
-        </ul>
-      </section>
+      <div className="cr-grid cr-grid-even">
+        <section className="cr-box" aria-labelledby="centres-h">
+          <h2 id="centres-h" className="cr-boxh"><span>Centre-wise Unit Availability</span> <small>free / total · demo centres, not real stations</small></h2>
+          <div className="cr-scroll">
+            <table className="cr-table">
+              <thead><tr><th>Centre</th>{UNITS.map((u) => <th key={u}>{UNIT_LABEL[u]}</th>)}<th>Total free</th></tr></thead>
+              <tbody>
+                {centres.map(({ centre, free }) => (
+                  <tr key={centre.id}>
+                    <td><strong>{place(centre.id)}</strong></td>
+                    {UNITS.map((u) => (
+                      <td key={u} className={`num${free[u] === 0 ? " cr-zero" : ""}`}>{free[u]} / {centre.units[u]}</td>
+                    ))}
+                    <td className="num">{UNITS.reduce((n, u) => n + free[u], 0)} / {UNITS.reduce((n, u) => n + centre.units[u], 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="cr-box" aria-labelledby="feed-h">
+          <h2 id="feed-h" className="cr-boxh"><span><span className="live-pulse" aria-hidden="true" /> Activity Log</span></h2>
+          <div className="cr-scroll cr-scroll-short">
+            <table className="cr-table">
+              <thead><tr><th>Time</th><th>Event</th></tr></thead>
+              <tbody aria-live="polite">
+                {feed.length === 0 && <tr><td colSpan={2} className="cr-empty-cell">Nothing yet. New reports and units appear here as they happen.</td></tr>}
+                {feed.map((f) => (
+                  <tr key={f.key}>
+                    <td className="num">{clock(f.at)}</td>
+                    <td><span className="feed-dot cr-dot" data-sev={f.sev ?? "none"} aria-hidden="true" /> {f.text}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </>
   );
 }
 
 export function DispatchPanel({ live: initial }: { live: DispatchRow[] }) {
   const [mode, setMode] = useState<"live" | "demo">("live");
-  const tick = useNow(1000);
 
   // Live: poll the open reports; new ones and status changes show up on their own.
   const [live, setLive] = useState(initial);
@@ -396,56 +437,56 @@ export function DispatchPanel({ live: initial }: { live: DispatchRow[] }) {
   };
   const current = STEPS[step];
   const fresh = step > 0 ? current.reports[current.reports.length - 1]?.publicId : undefined;
-  const secs = Math.max(0, Math.round((tick - checkedAt) / 1000));
 
   return (
     <>
-      <section className="dispatch-rules" aria-labelledby="rules-h">
-        <h2 id="rules-h">How help is shared out</h2>
-        <ol>
-          <li data-sev="critical"><strong>Critical</strong> Closest unit, sent at once, even before anyone checks the photo.</li>
-          <li data-sev="high"><strong>High</strong> After verification, from a centre within {RULES.high.maxKm} km that can spare one.</li>
-          <li data-sev="moderate"><strong>Moderate</strong> After verification. The nearest centre keeps its last unit for emergencies, so help may come from up to {RULES.moderate.maxKm} km away.</li>
-          <li data-sev="low"><strong>Low</strong> After verification, from a centre with plenty to spare, up to {RULES.low.maxKm} km away.</li>
-        </ol>
-      </section>
-
-      <div className="dispatch-modes" role="tablist" aria-label="What to show">
-        <button type="button" role="tab" aria-selected={mode === "live"} onClick={() => { setPlaying(false); setMode("live"); }}>
-          <span className="live-pulse" aria-hidden="true" /> Live
-        </button>
-        <button type="button" role="tab" aria-selected={mode === "demo"} onClick={() => { if (mode !== "demo") { setMode("demo"); restart(true); } }}>
-          ▶ Play a demo incident
-        </button>
+      <div className="cr-head">
+        <div>
+          <p className="cr-crumbs"><a href="/">Home</a> » <a href="/respond">Responders</a> » Dispatch Register</p>
+          <h1>
+            Dispatch Register{" "}
+            <span role="status">
+              {mode === "demo"
+                ? "· Demo incident · sample data, nothing is saved"
+                : offline
+                  ? "· Can't reach the server. Retrying every 15 seconds."
+                  : <>· <span className="live-pulse" aria-hidden="true" /> Live · last checked {clock(checkedAt)} IST</>}
+            </span>
+          </h1>
+        </div>
+        <div className="cr-actions">
+          <button type="button" className="cr-btn cr-btn-line" onClick={() => window.print()}>Print</button>
+          {mode === "live" ? (
+            <button type="button" className="cr-btn" onClick={() => { setMode("demo"); restart(true); }}>▶ Run demo incident</button>
+          ) : (
+            <button type="button" className="cr-btn" onClick={() => { setPlaying(false); setMode("live"); }}>Back to live</button>
+          )}
+        </div>
       </div>
 
       {mode === "live" ? (
-        <>
-          <p className={`dispatch-livebar${offline ? " is-off" : ""}`} role="status">
-            <span className="live-pulse" aria-hidden="true" />
-            {offline ? "Can't reach the server. Retrying every 15 seconds." : `Live · checked ${secs} s ago · new reports appear here on their own`}
-          </p>
-          <Board rows={live} startOf={liveStart} msPerMin={LIVE_MS_PER_MIN} estimate seedFeed />
-        </>
+        <Board rows={live} startOf={liveStart} msPerMin={LIVE_MS_PER_MIN} estimate seedFeed />
       ) : (
         <>
-          <div className="dispatch-step" aria-live="polite">
-            <p className="dispatch-step-count">Report {step} of {STEPS.length - 1} · sample data, driving shown 85× faster</p>
-            <h2>{current.title}</h2>
-            <p>{current.text}</p>
-            <div className="dispatch-step-actions">
-              {playing ? (
-                <button type="button" className="btn" onClick={() => setPlaying(false)}>❚❚ Pause</button>
-              ) : step < STEPS.length - 1 ? (
-                <button type="button" className="btn btn-primary" onClick={() => setPlaying(true)}>▶ Play</button>
-              ) : (
-                <button type="button" className="btn btn-primary" onClick={() => restart(true)}>↻ Play again</button>
-              )}
-              <button type="button" className="btn" onClick={() => { setPlaying(false); setStep((s) => Math.min(STEPS.length - 1, s + 1)); }} disabled={step === STEPS.length - 1}>Next report →</button>
-              <button type="button" className="btn" onClick={() => restart(false)}>Start over</button>
+          <section className="cr-box cr-step" aria-live="polite">
+            <h2 className="cr-boxh"><span>Demo incident · Report {step} of {STEPS.length - 1}</span> <small>driving shown 85× faster</small></h2>
+            <div className="cr-step-body">
+              <h3>{current.title}</h3>
+              <p>{current.text}</p>
+              <div className="cr-mini">
+                {playing ? (
+                  <button type="button" className="cr-btn cr-btn-line" onClick={() => setPlaying(false)}>❚❚ Pause</button>
+                ) : step < STEPS.length - 1 ? (
+                  <button type="button" className="cr-btn" onClick={() => setPlaying(true)}>▶ Play</button>
+                ) : (
+                  <button type="button" className="cr-btn" onClick={() => restart(true)}>↻ Play again</button>
+                )}
+                <button type="button" className="cr-btn cr-btn-line" onClick={() => { setPlaying(false); setStep((s) => Math.min(STEPS.length - 1, s + 1)); }} disabled={step === STEPS.length - 1}>Next report →</button>
+                <button type="button" className="cr-btn cr-btn-line" onClick={() => restart(false)}>Start over</button>
+              </div>
+              <div className="dispatch-step-bar" aria-hidden="true"><span style={{ width: `${(step / (STEPS.length - 1)) * 100}%` }} /></div>
             </div>
-            <div className="dispatch-step-bar" aria-hidden="true"><span style={{ width: `${(step / (STEPS.length - 1)) * 100}%` }} /></div>
-          </div>
+          </section>
           <Board key={`demo-${run}`} rows={current.reports} startOf={demoStart} msPerMin={DEMO_MS_PER_MIN} estimate={false} fresh={fresh} seedFeed={false} />
         </>
       )}
