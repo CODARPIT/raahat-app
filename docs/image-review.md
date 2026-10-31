@@ -11,11 +11,13 @@ GEMINI_API_KEY=<your Google AI Studio API key>
 GEMINI_IMAGE_REVIEW_MODEL=gemini-3.5-flash
 ```
 
-Keep the key server-side; never use a `NEXT_PUBLIC_` prefix. A Google AI Studio key works on the free tier without a billing account. Existing Cloudinary credentials are also required. Allow HTTPS to `generativelanguage.googleapis.com` and the existing Cloudinary API/delivery hosts in restricted environments. No additional database is used: the assessment is contextual metadata on the report's Cloudinary asset (`ir`, `ir_due`, `ir_at`, `ir_model`, `ir_why`, `ir_ok`, `ir_votes`).
+Keep the key server-side; never use a `NEXT_PUBLIC_` prefix. A Google AI Studio key works on the free tier without a billing account. Existing Cloudinary credentials are also required. Allow HTTPS to `generativelanguage.googleapis.com` and the existing Cloudinary API/delivery hosts in restricted environments. No additional database is used: the assessment is contextual metadata on the report's Cloudinary asset (`ir`, `ir_due`, `ir_at`, `ir_model`, `ir_why`, `ir_ok`, `ir_votes`, `ir_err`).
 
 `gemini-2.5-flash` is no longer offered to new API keys, and `gemini-3.8-flash` was returning "high demand" errors when this was built, so the default is `gemini-3.5-flash`. Change the model with `GEMINI_IMAGE_REVIEW_MODEL`; no code change is needed. `/api/health` does not call Gemini, so check a model with a real upload before a demo.
 
 Without a Gemini key, the report is still filed and labelled **assessment unavailable**. Videos and command-line seed reports are **not assessed**. The Gemini request uses the stored uploaded image without auto-improve or sharpening; web uploads may already have been downscaled on the citizen's device. Images larger than 8 MiB or in unsupported formats (anything other than JPEG, PNG, WebP, HEIC, HEIF) return unavailable rather than being classified. The combined image download/model request has a 20-second timeout. There is no automatic paid retry.
+
+Gemini 3 and later models are asked for `thinkingLevel: "low"` (with an 8192-token answer budget): long default thinking made some answers arrive truncated (`MAX_TOKENS`), which counted as unavailable. If a model rejects that setting with HTTP 400 (not billed), the request is sent once more without it. When an assessment is unavailable, the reason (for example `Gemini returned HTTP 429 RESOURCE_EXHAUSTED` or `No answer within 20 s`) is stored as `ir_err` and shown to responders in the control room; it is never public.
 
 ## What the result means
 

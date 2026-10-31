@@ -151,6 +151,29 @@ test("unsupported, oversized, failed, slow or keyless requests are 'unavailable'
 
 // ── Receipts ─────────────────────────────────────────────────────────────────
 
+test("Gemini 3+ is asked to think briefly; a 400 for that setting gets one plain retry; failures say why", async () => {
+  const ok = provider(jpeg, () => Response.json(answer("no_clear_signs")));
+  await assessImage("https://img/x", { apiKey: KEY, model: "gemini-3.5-flash", fetchImpl: ok.fetchImpl });
+  assert.deepEqual(JSON.parse(String(ok.calls[1].init!.body)).generationConfig.thinkingConfig, { thinkingLevel: "low" });
+  const old = provider(jpeg, () => Response.json(answer("no_clear_signs")));
+  await assessImage("https://img/x", { apiKey: KEY, model: "gemini-test", fetchImpl: old.fetchImpl });
+  assert.equal(JSON.parse(String(old.calls[1].init!.body)).generationConfig.thinkingConfig, undefined);
+
+  let n = 0;
+  const picky = provider(jpeg, () => (++n === 1 ? new Response("bad field", { status: 400 }) : Response.json(answer("no_clear_signs"))));
+  assert.equal((await assessImage("https://img/x", { apiKey: KEY, model: "gemini-3.5-flash", fetchImpl: picky.fetchImpl })).state, "clear");
+  assert.equal(picky.calls.length, 3);
+  assert.equal(JSON.parse(String(picky.calls[2].init!.body)).generationConfig.thinkingConfig, undefined);
+
+  const quota = provider(jpeg, () => Response.json({ error: { status: "RESOURCE_EXHAUSTED" } }, { status: 429 }));
+  const q = await assessImage("https://img/x", { apiKey: KEY, fetchImpl: quota.fetchImpl });
+  assert.equal(q.state, "unavailable");
+  assert.match(q.reason!, /429 RESOURCE_EXHAUSTED/);
+  assert.equal(quota.calls.length, 2, "a quota error is not retried");
+  assert.match(parseAssessment(answer("no_clear_signs", [], "MAX_TOKENS")).reason!, /cut off \(MAX_TOKENS\)/);
+  assert.ok(!JSON.stringify(q).includes(KEY));
+});
+
 test("filing receipts are signed, bound to one report and expire after an hour", () => {
   const now = Date.parse("2026-10-31T10:00:00Z");
   const r = issueReceipt("raahat/reports/abc", "image", now)!;

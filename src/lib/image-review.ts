@@ -24,6 +24,8 @@ export interface ImageReview {
   acceptedAt: string | null;
   /** This report has already cast its corroboration votes for nearby reports. */
   votesAdded: boolean;
+  /** Unavailable only: why no assessment was obtained (HTTP status, timeout). Responders only. */
+  error?: string | null;
 }
 
 export const REVIEW_DELAY_MS = 10_000;
@@ -50,14 +52,16 @@ export const NOT_ASSESSED: ImageReview = {
 /** The state a fresh report starts in. Videos and seed reports are not assessed. */
 export function initialReview(resourceType: "image" | "video", assess: boolean, now = new Date()): ImageReview {
   if (!assess || resourceType !== "image") return NOT_ASSESSED;
-  if (!reviewEnabled()) return { ...NOT_ASSESSED, state: "unavailable", at: now.toISOString() };
+  if (!reviewEnabled()) return { ...NOT_ASSESSED, state: "unavailable", at: now.toISOString(), error: "No Gemini key is set on the server" };
   return { ...NOT_ASSESSED, state: "pending", dueAt: new Date(now.getTime() + REVIEW_DELAY_MS).toISOString(), votesAdded: false };
 }
 
 /** An overdue pending job (instance stopped, function limit hit) reads as unavailable, never as success. */
 export function effectiveReview(review: ImageReview, now = new Date()): ImageReview {
   if (review.state !== "pending" || !review.dueAt) return review;
-  return now.getTime() > Date.parse(review.dueAt) + REVIEW_GRACE_MS ? { ...review, state: "unavailable" } : review;
+  return now.getTime() > Date.parse(review.dueAt) + REVIEW_GRACE_MS
+    ? { ...review, state: "unavailable", error: "The background check never finished (the server stopped it)" }
+    : review;
 }
 
 /** Suspected and not yet accepted by a responder: kept out of incidents, votes and the public feed. */
@@ -94,6 +98,16 @@ export interface Assessment {
   state: Extract<ImageReviewState, "clear" | "suspected" | "inconclusive" | "unavailable">;
   concerns: string[];
   model: string;
+  /** Unavailable only: what went wrong, for the control room. */
+  reason?: string;
+}
+
+/**
+ * Gemini 3 and later think at length by default. A look at one photo doesn't need it,
+ * and long thinking can use up the answer's token budget (a truncated, unusable answer).
+ */
+export function thinkingFor(model: string): { thinkingLevel: "low" } | undefined {
+  return Number(/^gemini-(\d+)/.exec(model)?.[1]) >= 3 ? { thinkingLevel: "low" } : undefined;
 }
 
 interface GeminiResponse {
@@ -102,12 +116,14 @@ interface GeminiResponse {
 }
 
 /** Model output → state. Blocked, truncated or malformed answers are "unavailable"; a suspicion without concrete concerns is "inconclusive". */
-export function parseAssessment(json: unknown): Pick<Assessment, "state" | "concerns"> {
-  const unavailable = { state: "unavailable" as const, concerns: [] };
+export function parseAssessment(json: unknown): Pick<Assessment, "state" | "concerns" | "reason"> {
+  const unavailable = (reason: string) => ({ state: "unavailable" as const, concerns: [], reason });
   const res = json as GeminiResponse | null;
-  if (!res || res.promptFeedback?.blockReason) return unavailable;
+  if (!res) return unavailable("No answer from Gemini");
+  if (res.promptFeedback?.blockReason) return unavailable(`Gemini blocked the request (${res.promptFeedback.blockReason})`);
   const candidate = res.candidates?.[0];
-  if (!candidate || candidate.finishReason !== "STOP") return unavailable;
+  if (!candidate) return unavailable("No answer from Gemini");
+  if (candidate.finishReason !== "STOP") return unavailable(`Gemini's answer was cut off (${candidate.finishReason ?? "no reason given"})`);
   const text = (candidate.content?.parts ?? [])
     .filter((p) => !p.thought && typeof p.text === "string")
     .map((p) => p.text)
@@ -117,7 +133,7 @@ export function parseAssessment(json: unknown): Pick<Assessment, "state" | "conc
   try {
     answer = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ""));
   } catch {
-    return unavailable;
+    return unavailable("Gemini's answer wasn't readable");
   }
   const concerns = Array.isArray(answer?.concerns)
     ? answer.concerns
@@ -134,7 +150,7 @@ export function parseAssessment(json: unknown): Pick<Assessment, "state" | "conc
     case "inconclusive":
       return { state: "inconclusive", concerns: [] };
     default:
-      return unavailable;
+      return unavailable("Gemini's answer wasn't readable");
   }
 }
 
@@ -172,36 +188,51 @@ async function readCapped(res: Response, max: number): Promise<Buffer | null> {
 export async function assessImage(imageUrl: string, opts: AssessOptions = {}): Promise<Assessment> {
   const model = opts.model ?? reviewModel();
   const apiKey = opts.apiKey ?? process.env.GEMINI_API_KEY;
-  const unavailable: Assessment = { state: "unavailable", concerns: [], model };
-  if (!apiKey) return unavailable;
+  const timeoutMs = opts.timeoutMs ?? REVIEW_TIMEOUT_MS;
+  const unavailable = (reason: string): Assessment => ({ state: "unavailable", concerns: [], model, reason });
+  if (!apiKey) return unavailable("No Gemini key is set on the server");
   const fetchImpl = opts.fetchImpl ?? fetch;
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? REVIEW_TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const img = await fetchImpl(imageUrl, { signal: ctrl.signal });
     const mime = (img.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
-    if (!img.ok || !REVIEW_MIME_TYPES.includes(mime)) return unavailable;
+    if (!img.ok) return unavailable(`The photo couldn't be downloaded (HTTP ${img.status})`);
+    if (!REVIEW_MIME_TYPES.includes(mime)) return unavailable(`Unsupported image format (${mime || "unknown"})`);
     const bytes = await readCapped(img, MAX_REVIEW_BYTES);
-    if (!bytes) return unavailable;
+    if (!bytes) return unavailable("The photo is larger than 8 MiB");
 
     // The key travels in a header, never in the URL, so it can't leak into logs.
-    const res = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: REVIEW_PROMPT }, { inline_data: { mime_type: mime, data: bytes.toString("base64") } }] }],
-        generationConfig: { temperature: 0, maxOutputTokens: 4096, responseMimeType: "application/json", responseSchema: RESPONSE_SCHEMA },
-      }),
-    });
+    const ask = (thinking: ReturnType<typeof thinkingFor>) =>
+      fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+        method: "POST",
+        signal: ctrl.signal,
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: REVIEW_PROMPT }, { inline_data: { mime_type: mime, data: bytes.toString("base64") } }] }],
+          generationConfig: {
+            temperature: 0,
+            maxOutputTokens: 8192,
+            responseMimeType: "application/json",
+            responseSchema: RESPONSE_SCHEMA,
+            ...(thinking ? { thinkingConfig: thinking } : {}),
+          },
+        }),
+      });
+    let res = await ask(thinkingFor(model));
+    // A model that doesn't accept the thinking setting rejects the request (400, not
+    // billed); ask once more without it. Any other failure gets no retry.
+    if (res.status === 400 && thinkingFor(model)) res = await ask(undefined);
     if (!res.ok) {
-      console.warn(`[raahat] Gemini image review failed: HTTP ${res.status}`);
-      return unavailable;
+      const status = ((await res.json().catch(() => null)) as { error?: { status?: string } } | null)?.error?.status;
+      console.warn(`[raahat] Gemini image review failed: HTTP ${res.status}${status ? ` ${status}` : ""}`);
+      return unavailable(`Gemini returned HTTP ${res.status}${status ? ` ${status}` : ""}${res.status === 429 ? " (quota or rate limit)" : res.status === 503 ? " (model busy)" : ""}`);
     }
     return { ...parseAssessment(await res.json()), model };
   } catch (err) {
-    console.warn("[raahat] Gemini image review unavailable:", ctrl.signal.aborted ? "timed out" : (err as Error).message);
-    return unavailable;
+    const timedOut = ctrl.signal.aborted;
+    console.warn("[raahat] Gemini image review unavailable:", timedOut ? "timed out" : (err as Error).message);
+    return unavailable(timedOut ? `No answer within ${Math.round(timeoutMs / 1000)} s` : "Couldn't reach Gemini");
   } finally {
     clearTimeout(timer);
   }

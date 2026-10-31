@@ -33,7 +33,7 @@ function publicView(r: Report): Report {
     phash: null,
     reporterHash: null,
     history: [],
-    imageReview: { ...r.imageReview, concerns: [], model: null },
+    imageReview: { ...r.imageReview, concerns: [], model: null, error: null },
   };
 }
 

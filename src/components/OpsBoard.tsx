@@ -13,15 +13,46 @@ import {
 } from "@/lib/cld-url";
 import { HISTORY_LABEL } from "@/lib/history";
 import { CATEGORY_LABEL, CHANNEL_LABEL, DEPTH_LABEL, LOCATION_SOURCE_LABEL } from "@/lib/labels";
-import { isLocated, type Report, type Severity, type Status } from "@/lib/types";
+import { isLocated, type Category, type Report, type Severity, type Status } from "@/lib/types";
 import { shortId } from "@/lib/verify";
 import type { Incident } from "@/lib/incidents";
 import { REPORT_REFRESH_MS } from "@/lib/constants";
 import { imageConcern, type ImageReviewState } from "@/lib/image-review";
+import { assignAll, DEMO_CENTRES, UNIT_LABEL, type Assignment } from "@/lib/dispatch";
+import { rowFromReport } from "@/lib/dispatch-rows";
+import { ControlShell, Tile } from "@/components/ControlShell";
 
 const MapView = dynamic(() => import("@/components/MapView"), { ssr: false });
 
 const SEV_RANK: Record<Severity, number> = { critical: 4, high: 3, moderate: 2, low: 1 };
+const SEV_LABEL: Record<Severity, string> = { critical: "Critical", high: "High", moderate: "Moderate", low: "Low" };
+const STATUS_LABEL: Record<Status, string> = { new: "New", verified: "Verified", dispatched: "Dispatched", resolved: "Resolved", rejected: "Rejected as false" };
+const CLOSED: Status[] = ["resolved", "rejected"];
+type StatusFilter = "open" | "all" | "closed" | "new" | "verified" | "dispatched";
+function matchesStatus(s: Status, f: StatusFilter) {
+  if (f === "all") return true;
+  if (f === "open") return !CLOSED.includes(s);
+  if (f === "closed") return CLOSED.includes(s);
+  return s === f;
+}
+/** The image check in a queue cell. */
+function imageShort(r: Report): string {
+  const ir = r.imageReview;
+  if (!ir) return "Not assessed";
+  if (ir.state === "suspected") return ir.acceptedAt ? "Accepted after review" : "Suspected · review";
+  return { pending: "Pending", clear: "No clear signs", inconclusive: "Inconclusive", unavailable: "Unavailable", not_assessed: "Not assessed" }[ir.state];
+}
+const hhmm = (iso: string | number) => new Date(iso).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false });
+const centreName = (id: string | null) => DEMO_CENTRES.find((c) => c.id === id)?.name.replace(" (demo)", "") ?? "";
+function unitText(r: Report, a: Assignment | undefined): string {
+  if (CLOSED.includes(r.status)) return "None: report closed";
+  if (r.duplicateOf) return "None: a copy of another report";
+  if (!isLocated(r)) return "Pin the location to assign a unit";
+  if (!a) return "None";
+  if (a.state === "waiting_verification") return `${UNIT_LABEL[a.unit]}, assigned as soon as you verify it`;
+  if (a.state === "queued") return `Waiting for a free ${UNIT_LABEL[a.unit].toLowerCase()}`;
+  return `${UNIT_LABEL[a.unit]}, ${centreName(a.centreId)} centre · ${a.km} km · ETA ${a.etaMin} min${a.unverified ? " · sent before verification" : ""}`;
+}
 const NEXT_STATUS: { status: Status; label: string }[] = [
   { status: "verified", label: "Mark verified" },
   { status: "dispatched", label: "Team dispatched" },
@@ -93,7 +124,11 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
   const [ai, setAi] = useState<AiInfo | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [minSev, setMinSev] = useState<Severity>("low");
-  const [hideClosed, setHideClosed] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("open");
+  const [hazard, setHazard] = useState<Category | "all">("all");
+  const [query, setQuery] = useState("");
+  const [imageOnly, setImageOnly] = useState(false);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [needsLocation, setNeedsLocation] = useState(false);
   const [bw, setBw] = useState<Bandwidth>("normal");
   const [reveal, setReveal] = useState(false);
@@ -123,6 +158,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
       }
       setStale(Boolean(data.stale));
       setAi((data.ai as AiInfo | undefined) ?? null);
+      setLoadedAt(Date.now());
       setError(null);
     } catch (e) {
       setError(`${(e as Error).message} Retrying every ${REPORT_REFRESH_MS / 1000} seconds.`);
@@ -137,21 +173,35 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
     return () => clearInterval(id);
   }, [load]);
 
+  // The sidebar's "Image Review" link from other responder pages.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("view") === "image-review") setImageOnly(true);
+  }, []);
+
   const open = useMemo(
-    () => reports.filter((r) => !r.duplicateOf).filter((r) => !hideClosed || (r.status !== "resolved" && r.status !== "rejected")),
-    [reports, hideClosed],
+    () => reports.filter((r) => !r.duplicateOf).filter((r) => matchesStatus(r.status, statusFilter)),
+    [reports, statusFilter],
   );
   const unlocatedCount = open.filter((r) => !isLocated(r)).length;
+  const hazards = useMemo(() => [...new Set(reports.filter((r) => !r.duplicateOf).map((r) => r.primaryCategory))].sort(), [reports]);
 
-  const filteredReports = useMemo(
-    () =>
-      open
-        .filter((r) => SEV_RANK[r.severity] >= SEV_RANK[minSev])
-        .filter((r) => !needsLocation || !isLocated(r))
-        // Gemini uncertainty does not push a possibly urgent report below low-priority cases.
-        .sort((a, b) => Number(a.reviewReasons.length > 0) - Number(b.reviewReasons.length > 0) || b.score - a.score || Date.parse(b.createdAt) - Date.parse(a.createdAt)),
-    [open, minSev, needsLocation],
-  );
+  const filteredReports = useMemo(() => {
+    const q = query.trim().toLowerCase().replace(/^rht-/, "");
+    return open
+      .filter((r) => SEV_RANK[r.severity] >= SEV_RANK[minSev])
+      .filter((r) => !needsLocation || !isLocated(r))
+      .filter((r) => hazard === "all" || r.primaryCategory === hazard || r.categories.includes(hazard))
+      .filter((r) => !imageOnly || imageConcern(r))
+      .filter((r) => !q || [shortId(r.publicId), r.placeHint, r.summary, CATEGORY_LABEL[r.primaryCategory]].some((s) => s.toLowerCase().includes(q)))
+      // Gemini uncertainty does not push a possibly urgent report below low-priority cases.
+      .sort((a, b) => Number(a.reviewReasons.length > 0) - Number(b.reviewReasons.length > 0) || b.score - a.score || Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  }, [open, minSev, needsLocation, hazard, imageOnly, query]);
+
+  // Which unit the dispatch rules give each open report (the same rules as the dispatch register).
+  const dispatch = useMemo(() => assignAll(reports.map(rowFromReport)), [reports]);
+  const assignmentOf = useMemo(() => new Map(dispatch.assignments.map((a) => [a.publicId, a])), [dispatch]);
+  const openAll = reports.filter((r) => !r.duplicateOf && !CLOSED.includes(r.status));
+  const reviewCount = openAll.filter(imageConcern).length;
 
   const incidentByReport = useMemo(() => new Map(incidents.flatMap((incident) => incident.reportIds.map((id) => [id, incident] as const))), [incidents]);
   // Highest-priority original represents the group; all evidence remains accessible.
@@ -285,7 +335,10 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
       }
       if (mode !== "responder" || !selected || busy) return;
       if (STATUS_KEYS[key] && STATUS_KEYS[key] !== selected.status) patch({ status: STATUS_KEYS[key] });
-      else if (key === "p" && !selected.duplicateOf) setPinning((v) => !v);
+      else if (key === "p" && !selected.duplicateOf) {
+        setPinning((v) => !v);
+        if (mode === "responder") document.getElementById("map")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
       else if (key === "f" && selected.resourceType === "image") setReveal((v) => !v);
     };
     window.addEventListener("keydown", onKey);
@@ -294,6 +347,400 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
 
   const blur = mode === "public" || !reveal;
   const quotaLow = ai?.quota && ai.quota.remaining < LOW_QUOTA;
+
+  const mapEl = (
+    <div className="map-wrap">
+      {pinning && selected && (
+        <p className="pin-banner" role="status">
+          Click the map where this report is{suggestion ? ", or click the dashed suggestion" : ""}.{" "}
+          <button className="linklike" onClick={() => setPinning(false)}>Cancel (Esc)</button>
+        </p>
+      )}
+      <div className="map-legend" aria-label="Map legend">
+        <span><i className="dot" data-sev="critical" />Critical</span>
+        <span><i className="dot" data-sev="high" />High</span>
+        <span><i className="dot" data-sev="moderate" />Moderate</span>
+        <span><i className="dot" data-sev="low" />Low</span>
+        <span className="legend-note">Dashed circles: severity-based grouping areas</span>
+      </div>
+      <MapView
+        reports={filteredReports}
+        incidents={incidents}
+        selectedId={selectedId}
+        onSelect={(r) => setSelectedId(r.publicId)}
+        onPick={pinning ? pinAt : undefined}
+        picking={pinning}
+        suggested={mode === "responder" && selected && !isLocated(selected) ? suggestion : null}
+      />
+    </div>
+  );
+
+  const shortcutsEl = (
+    <dialog
+      ref={helpRef}
+      className="shortcuts"
+      aria-labelledby="shortcuts-h"
+      onClick={(e) => e.target === e.currentTarget && helpRef.current?.close()}
+    >
+      <h2 id="shortcuts-h">Keyboard shortcuts</h2>
+      <dl>
+        {SHORTCUTS.filter((s) => mode === "responder" || !s.responderOnly).map((s) => (
+          <div key={s.keys}>
+            <dt><kbd>{s.keys}</kbd></dt>
+            <dd>{s.action}</dd>
+          </div>
+        ))}
+      </dl>
+      <form method="dialog"><button className="btn">Close</button></form>
+    </dialog>
+  );
+
+  if (mode === "responder") {
+    const sel = selected;
+    const unit = sel ? assignmentOf.get(sel.publicId) : undefined;
+    const startPinning = () => {
+      setPinning((p) => !p);
+      document.getElementById("map")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    return (
+      <ControlShell
+        active="dashboard"
+        reviewCount={reviewCount}
+        imageReviewOn={imageOnly}
+        onImageReview={() => {
+          setImageOnly((v) => !v);
+          document.getElementById("queue")?.scrollIntoView({ block: "start" });
+        }}
+        side={
+          <label className="cr-side-check">
+            <input type="checkbox" checked={bw === "saver"} onChange={(e) => setBw(e.target.checked ? "saver" : "normal")} /> Low-bandwidth (2G) mode
+          </label>
+        }
+      >
+        <div className="cr-head">
+          <div>
+            <p className="cr-crumbs"><a href="/">Home</a> » Responders » Dashboard</p>
+            <h1>Dashboard <span>· As on {loadedAt ? hhmm(loadedAt) : "…"} IST · refreshes every {REPORT_REFRESH_MS / 1000} s</span></h1>
+          </div>
+          <div className="cr-actions">
+            <button type="button" className="cr-btn cr-btn-line" onClick={() => window.print()}>Print</button>
+            <a className="cr-btn cr-btn-line" href="/api/reports/export">Export CSV</a>
+            <a className="cr-btn" href="/respond/sitrep">Situation Report</a>
+          </div>
+        </div>
+
+        <div className="cr-tiles">
+          <Tile n={openAll.length} label="Open reports" color="#123D73" icon="queue" />
+          <Tile n={openAll.filter((r) => r.severity === "critical").length} label="Critical" color="#B3122E" icon="alert" />
+          <Tile n={openAll.filter((r) => r.status === "new").length} label="Awaiting verification" color="#B86E00" icon="clock" />
+          <Tile n={reviewCount} label="Image review needed" color="#5B4BB4" icon="shield" />
+          <Tile n={incidents.length} label="Active incidents" color="#0B57A4" icon="ring" />
+          <Tile n={dispatch.assignments.filter((x) => x.state === "assigned").length} label="Units deployed" color="#138808" icon="dispatch" />
+        </div>
+
+        {(ai || savings || stale || error) && (
+          <div className="cr-notes">
+            {ai && (
+              <p className={quotaLow || ai.mode === "demo" ? "warn" : undefined}>
+                {ai.mode === "demo"
+                  ? "AI Vision is off: reports are triaged rule-based from the reporter's note."
+                  : ai.quota
+                    ? <>AI Vision quota: <strong className="num">{ai.quota.remaining}</strong> left{quotaLow && ". Running low; new reports fall back to rule-based triage when it runs out."}</>
+                    : "AI Vision quota: shown after the first live analysis."}
+              </p>
+            )}
+            {savings && (
+              <p>Queue images: <strong className="num">{kb(savings.thumb)}</strong> instead of <strong className="num">{kb(savings.orig)}</strong> of originals, {savings.pct}% less data.</p>
+            )}
+            {stale && <p className="warn">Data may be a few seconds old: Cloudinary Search is busy, showing the last good list.</p>}
+            {error && <p className="error" role="alert">{error}</p>}
+          </div>
+        )}
+
+        <div className="cr-grid">
+          <section className="cr-box" id="queue" aria-labelledby="queue-h">
+            <h2 id="queue-h" className="cr-boxh">
+              <span>Incident Queue <small>(sorted by priority score)</small></span>
+              {fresh.size > 0 && <span className="pill pill-new num" role="status">{fresh.size} new</span>}
+            </h2>
+            <form className="cr-filters" onSubmit={(e) => e.preventDefault()}>
+              <label>Priority{" "}
+                <select value={minSev} onChange={(e) => setMinSev(e.target.value as Severity)}>
+                  <option value="low">All</option>
+                  <option value="moderate">Moderate and up</option>
+                  <option value="high">High and up</option>
+                  <option value="critical">Critical only</option>
+                </select>
+              </label>
+              <label>Status{" "}
+                <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}>
+                  <option value="open">Open</option>
+                  <option value="new">New</option>
+                  <option value="verified">Verified</option>
+                  <option value="dispatched">Dispatched</option>
+                  <option value="closed">Closed</option>
+                  <option value="all">All</option>
+                </select>
+              </label>
+              <label>Hazard{" "}
+                <select value={hazard} onChange={(e) => setHazard(e.target.value as Category | "all")}>
+                  <option value="all">All</option>
+                  {hazards.map((h) => <option key={h} value={h}>{CATEGORY_LABEL[h]}</option>)}
+                </select>
+              </label>
+              <input type="search" placeholder="Ref. No. / place" aria-label="Search by reference number or place" value={query} onChange={(e) => setQuery(e.target.value)} />
+              <label className="cr-check">
+                <input type="checkbox" checked={needsLocation} onChange={(e) => setNeedsLocation(e.target.checked)} /> Needs location
+                {unlocatedCount > 0 && <span className="pill pill-warn num">{unlocatedCount}</span>}
+              </label>
+              <label className="cr-check"><input type="checkbox" checked={groupIncidents} onChange={(e) => setGroupIncidents(e.target.checked)} /> Group incidents</label>
+              {imageOnly && <button type="button" className="cr-chip" onClick={() => setImageOnly(false)} aria-label="Show all reports, not just image review">Image review only ✕</button>}
+            </form>
+            <div className="cr-scroll">
+              <table className="cr-table">
+                <thead>
+                  <tr><th>S.No.</th><th>Ref. No.</th><th>Hazard / Location</th><th>Priority</th><th>Score</th><th>Image check</th><th>Status</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                  {queue.map((r, i) => {
+                    const inc = incidentByReport.get(r.publicId);
+                    const isNew = fresh.has(r.publicId);
+                    return (
+                      <tr key={r.publicId} data-report={r.publicId} className={[r.publicId === selectedId ? "sel" : "", isNew ? "is-new" : ""].join(" ").trim() || undefined} onClick={() => setSelectedId(r.publicId)}>
+                        <td className="num">{i + 1}</td>
+                        <td className="cr-ref">RHT-{shortId(r.publicId)}</td>
+                        <td>
+                          <div className="cr-hz">
+                            <img src={thumbUrl(r, bw, true)} alt="" loading="lazy" width={56} height={42} />
+                            <span>
+                              <strong>{CATEGORY_LABEL[r.primaryCategory]}</strong>
+                              <small>
+                                {r.placeHint || (isLocated(r) ? `${r.lat.toFixed(3)}, ${r.lng.toFixed(3)}` : "")}
+                                {!isLocated(r) && <span className="pill pill-warn">No location</span>} · {CHANNEL_LABEL[r.channel]} · {hhmm(r.createdAt)}
+                              </small>
+                              {(isNew || inc || r.corroborations > 0) && (
+                                <small>
+                                  {isNew && <span className="pill pill-new">New</span>}
+                                  {inc && <span className="pill incident-pill">{inc.reportIds.length} in incident</span>}
+                                  {r.corroborations > 0 && ` ${r.corroborations + 1} reports`}
+                                </small>
+                              )}
+                            </span>
+                          </div>
+                        </td>
+                        <td><span className="cr-pr" data-sev={r.severity}>{SEV_LABEL[r.severity].toUpperCase()}</span></td>
+                        <td className="num">{r.score}</td>
+                        <td className={imageConcern(r) ? "cr-suspect" : undefined}>{imageShort(r)}</td>
+                        <td>
+                          {STATUS_LABEL[r.status]}
+                          {r.needsReview && <small className="cr-flag">Flagged: {r.reviewReasons[0]}</small>}
+                          {r.aiMode === "demo" && <small>Rule-based triage</small>}
+                        </td>
+                        <td><button type="button" className="cr-link" onClick={(e) => { e.stopPropagation(); setSelectedId(r.publicId); }}>View</button></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {loaded && queue.length === 0 && !error && (
+                <p className="cr-empty">
+                  {imageOnly
+                    ? "No image is waiting for review."
+                    : needsLocation
+                      ? "Every open report has a location. Nothing to pin right now."
+                      : "No reports match these filters. When a citizen files one it appears here within a minute."}
+                </p>
+              )}
+            </div>
+            <p className="cr-foot">
+              <span>Showing {queue.length} {queue.length === 1 ? "row" : "rows"}{groupIncidents && queue.length !== filteredReports.length ? ` (incidents grouped, ${filteredReports.length} reports)` : ""}</span>
+              <button type="button" className="cr-link" onClick={() => helpRef.current?.showModal()} aria-keyshortcuts="?">Keyboard shortcuts <kbd>?</kbd></button>
+            </p>
+          </section>
+
+          <div className="cr-col">
+            {sel && (
+              <section className="cr-box cr-detail" aria-labelledby="detail-h">
+                <h2 id="detail-h" className="cr-boxh">
+                  <span>Incident Details · <span className="cr-ref-h">RHT-{shortId(sel.publicId)}</span></span>
+                  <button type="button" className="cr-close" onClick={() => setSelectedId(null)} aria-label="Close report" title="Close (Esc)">✕</button>
+                </h2>
+                <div className="cr-detail-body">
+                  <div className="cr-detail-top">
+                    <div className="cr-photo">
+                      {sel.resourceType === "video" ? (
+                        <video src={videoPreviewUrl(sel.publicId)} controls muted playsInline poster={enhancedUrl(sel, true)} />
+                      ) : (
+                        <img src={enhancedUrl(sel, blur)} alt={`Report photo${blur ? ", faces pixelated" : ""}, auto-enhanced`} />
+                      )}
+                    </div>
+                    <div>
+                      <p className="cr-detail-title"><strong>{CATEGORY_LABEL[sel.primaryCategory]}</strong> · {ago(sel.createdAt)}</p>
+                      {sel.note && <p className="cr-quote">&ldquo;{sel.note}&rdquo;</p>}
+                      <p className="cr-muted">AI summary: {sel.summary}</p>
+                      {sel.summaryHi && <p className="cr-muted" lang="hi">{sel.summaryHi}</p>}
+                      <div className="cr-mini">
+                        {sel.resourceType === "image" && <button type="button" className="cr-btn cr-btn-line" onClick={() => setReveal((v) => !v)}>{reveal ? "Pixelate faces" : "Show faces"}</button>}
+                        <a className="cr-btn cr-btn-line" href={originalUrl(sel)} target="_blank" rel="noreferrer">Original file</a>
+                        <a className="cr-btn cr-btn-line" href={alertCardUrl(sel)} target="_blank" rel="noreferrer">Alert card</a>
+                        <a className="cr-btn cr-btn-line" href={`/v/${shortId(sel.publicId)}`} target="_blank" rel="noreferrer" title="Public page and Instagram card for this report">Fact-check page</a>
+                      </div>
+                    </div>
+                  </div>
+
+                  {sel.reviewReasons.length > 0 && (
+                    <div className="review" role="note">
+                      <strong>Check before acting:</strong>
+                      <ul>{sel.reviewReasons.map((x) => <li key={x}>{x}</li>)}</ul>
+                    </div>
+                  )}
+                  {sel.imageReview?.state === "suspected" && (
+                    <div className={imageConcern(sel) ? "review" : "image-check"} role="note">
+                      <strong>AI image check raised concerns:</strong>
+                      {sel.imageReview.concerns.length > 0 && <ul>{sel.imageReview.concerns.map((c) => <li key={c}>{c}</li>)}</ul>}
+                      {sel.imageReview.acceptedAt ? (
+                        <p className="hint">
+                          A responder accepted this image as evidence on{" "}
+                          {new Date(sel.imageReview.acceptedAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.
+                          The model&apos;s concerns are kept for the record.
+                        </p>
+                      ) : (
+                        <button className="cr-btn" disabled={busy} onClick={() => patch({ acceptImage: true })}>Accept image evidence after review</button>
+                      )}
+                    </div>
+                  )}
+
+                  <table className="gov-kv cr-kv">
+                    <tbody>
+                      <tr><th scope="row">Priority</th><td><span className="cr-pr" data-sev={sel.severity}>{SEV_LABEL[sel.severity].toUpperCase()}</span> Score <strong className="num">{sel.score}</strong> / 100</td></tr>
+                      <tr>
+                        <th scope="row">Why this score</th>
+                        <td>
+                          <ul className="cr-why">
+                            {sel.breakdown.map((l, i) => <li key={i} className={l.kind}>{l.label} <b className="num">{signed(l.points)}</b></li>)}
+                          </ul>
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Incident</th>
+                        <td>
+                          {selectedIncident
+                            ? incidentEvidence.length > 1
+                              ? `${incidentEvidence.length} reports grouped within ${selectedIncident.radiusM} m (same hazard, last 12 h)`
+                              : `Only this report so far; others of the same hazard within ${selectedIncident.radiusM} m in 12 h will join it`
+                            : "Not grouped with other reports yet"}
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Independent reports</th>
+                        <td className="num">{sel.corroborations + 1}{duplicates.length > 0 && `, plus ${duplicates.length} forwarded ${duplicates.length === 1 ? "copy" : "copies"} merged into this one`}</td>
+                      </tr>
+                      {sel.imageReview && (
+                        <tr>
+                          <th scope="row">AI image check</th>
+                          <td>
+                            {sel.imageReview.state === "not_assessed" ? "Not assessed (videos and reports filed before the check existed)." : IMAGE_CHECK[sel.imageReview.state]}
+                            {sel.imageReview.state === "unavailable" && sel.imageReview.error && <strong className="cr-reason"> Reason: {sel.imageReview.error}.</strong>}
+                            {sel.imageReview.model && <small className="cr-muted"> Checked with {sel.imageReview.model}{sel.imageReview.at ? ` at ${hhmm(sel.imageReview.at)}` : ""}. Separate from the score.</small>}
+                          </td>
+                        </tr>
+                      )}
+                      <tr><th scope="row">Dispatched unit</th><td>{unitText(sel, unit)} <a href="/respond/dispatch">Register »</a></td></tr>
+                      <tr>
+                        <th scope="row">Location</th>
+                        <td className="num">
+                          {isLocated(sel) ? (
+                            <>
+                              <a href={`https://www.google.com/maps?q=${sel.lat},${sel.lng}`} target="_blank" rel="noreferrer">{sel.lat.toFixed(4)} N, {sel.lng.toFixed(4)} E</a>
+                              <small className="cr-muted"> · {LOCATION_SOURCE_LABEL[sel.locationSource]}</small>
+                            </>
+                          ) : (
+                            <span className="pill pill-warn">No location yet</span>
+                          )}
+                        </td>
+                      </tr>
+                      {sel.placeHint && <tr><th scope="row">Place hint</th><td>{sel.placeHint}</td></tr>}
+                      <tr>
+                        <th scope="row">What the AI saw</th>
+                        <td>
+                          {sel.peopleVisible} {sel.peopleVisible === 1 ? "person" : "people"} visible · {sel.peopleInDanger ? "someone in danger" : "no one seen in danger"} · water: {DEPTH_LABEL[sel.waterDepth]} · vehicles: {sel.accessBlocked ? "blocked" : "look able to pass"}
+                          {sel.categories.length > 1 && <> · also {sel.categories.filter((c) => c !== sel.primaryCategory).map((c) => CATEGORY_LABEL[c]).join(", ")}</>}
+                        </td>
+                      </tr>
+                      <tr>
+                        <th scope="row">Source</th>
+                        <td>{CHANNEL_LABEL[sel.channel]} · {sel.reporterHash ? "reporter ID hashed" : "no reporter ID kept"} · {sel.lang === "hi" ? "Hindi" : "English"} · {sel.aiMode === "live" ? "Cloudinary AI Vision" : "rule-based triage (AI Vision unavailable)"}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  {selectedIncident && (
+                    <div className="incident-evidence cr-evidence">
+                      <p className="cr-label">Reports in this incident (the circle is a grouping area, not the disaster&apos;s extent)</p>
+                      <ul>
+                        {incidentEvidence.map((report) => (
+                          <li key={report.publicId}>
+                            <button type="button" aria-pressed={selectedId === report.publicId} onClick={() => setSelectedId(report.publicId)}>
+                              <span className="cr-pr" data-sev={report.severity}>{SEV_LABEL[report.severity].toUpperCase()}</span> {report.summary || CATEGORY_LABEL[report.primaryCategory]}
+                              {report.publicId === selectedIncident.anchorId && <span className="pill">Anchor report</span>}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="cr-label">Update status <small>(now: {STATUS_LABEL[sel.status]})</small></p>
+                    <div className="cr-mini">
+                      {!sel.duplicateOf && (
+                        <button className="cr-btn cr-btn-line" disabled={busy} aria-pressed={pinning} onClick={startPinning}>
+                          {pinning ? "Cancel pinning" : isLocated(sel) ? "Move pin" : "Pin location"}
+                        </button>
+                      )}
+                      {NEXT_STATUS.map((s) => {
+                        const current = s.status === sel.status;
+                        return (
+                          <button
+                            key={s.status}
+                            className={`cr-btn${current ? "" : " cr-btn-line"}${s.status === "rejected" ? " cr-btn-red" : ""}`}
+                            aria-pressed={current}
+                            disabled={busy}
+                            onClick={() => !current && patch({ status: s.status })}
+                          >
+                            {s.label}{current && " ✓"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {sel.history.length > 0 && (
+                    <table className="cr-table cr-audit" aria-label="Audit trail">
+                      <thead><tr><th>Time</th><th>Action (audit trail)</th></tr></thead>
+                      <tbody>
+                        {sel.history.map((h, i) => (
+                          <tr key={i}>
+                            <td className="num"><time dateTime={h.at}>{new Date(h.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })}</time></td>
+                            <td>{HISTORY_LABEL[h.action]}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </section>
+            )}
+            <section className="cr-box cr-map" id="map" aria-labelledby="map-h">
+              <h2 id="map-h" className="cr-boxh"><span>Situation Map</span> <a href="/map">Public view »</a></h2>
+              {mapEl}
+            </section>
+          </div>
+        </div>
+        {shortcutsEl}
+      </ControlShell>
+    );
+  }
 
   return (
     <main className="ops">
@@ -317,35 +764,13 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
               <option value="critical">critical only</option>
             </select>
           </label>
-          {mode === "responder" && (
-            <label>
-              <input type="checkbox" checked={needsLocation} onChange={(e) => setNeedsLocation(e.target.checked)} /> Needs location
-              {unlocatedCount > 0 && <span className="pill pill-warn num">{unlocatedCount}</span>}
-            </label>
-          )}
-          <label><input type="checkbox" checked={hideClosed} onChange={(e) => setHideClosed(e.target.checked)} /> Hide closed</label>
+          <label><input type="checkbox" checked={statusFilter === "open"} onChange={(e) => setStatusFilter(e.target.checked ? "open" : "all")} /> Hide closed</label>
           <label><input type="checkbox" checked={groupIncidents} onChange={(e) => setGroupIncidents(e.target.checked)} /> Group incidents</label>
           <label><input type="checkbox" checked={bw === "saver"} onChange={(e) => setBw(e.target.checked ? "saver" : "normal")} /> 2G mode</label>
           <button type="button" className="linklike kbd-hint" onClick={() => helpRef.current?.showModal()} aria-keyshortcuts="?">
             Shortcuts <kbd>?</kbd>
           </button>
         </div>
-        {mode === "responder" && (
-          <div className="ops-tools">
-            <a href="/respond/sitrep" className="tool-link">Situation report</a>
-            <a href="/respond/dispatch" className="tool-link">Dispatch board</a>
-            <a href="/api/reports/export" className="tool-link">Download CSV</a>
-          </div>
-        )}
-        {mode === "responder" && ai && (
-          <p className={`saving${quotaLow || ai.mode === "demo" ? " warn" : ""}`}>
-            {ai.mode === "demo"
-              ? "AI Vision is off: reports are triaged rule-based from the reporter's note."
-              : ai.quota
-                ? <>AI Vision quota: <strong className="num">{ai.quota.remaining}</strong> left{quotaLow && ". Running low; new reports fall back to rule-based triage when it runs out."}</>
-                : "AI Vision quota: shown after the first live analysis."}
-          </p>
-        )}
         {savings && (
           <p className="saving">
             Queue images: <strong className="num">{kb(savings.thumb)}</strong> instead of{" "}
@@ -383,8 +808,6 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                     {r.status !== "new" && `, ${r.status}`}
                     {r.needsReview && ", needs review"}
                     {r.aiMode === "demo" && ", rule-based"}
-                    {mode === "responder" && r.imageReview?.state === "pending" && <> <span className="pill">Image check pending</span></>}
-                    {mode === "responder" && imageConcern(r) && <> <span className="pill pill-warn">Possible AI image</span></>}
                   </span>
                 </span>
               </button>
@@ -394,30 +817,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
       </section>
 
       <section className="ops-main">
-        <div className="map-wrap">
-          {pinning && selected && (
-            <p className="pin-banner" role="status">
-              Click the map where this report is{suggestion ? ", or click the dashed suggestion" : ""}.{" "}
-              <button className="linklike" onClick={() => setPinning(false)}>Cancel (Esc)</button>
-            </p>
-          )}
-          <div className="map-legend" aria-label="Map legend">
-            <span><i className="dot" data-sev="critical" />Critical</span>
-            <span><i className="dot" data-sev="high" />High</span>
-            <span><i className="dot" data-sev="moderate" />Moderate</span>
-            <span><i className="dot" data-sev="low" />Low</span>
-            <span className="legend-note">Dashed circles: severity-based grouping areas</span>
-          </div>
-          <MapView
-            reports={filteredReports}
-            incidents={incidents}
-            selectedId={selectedId}
-            onSelect={(r) => setSelectedId(r.publicId)}
-            onPick={pinning ? pinAt : undefined}
-            picking={pinning}
-            suggested={mode === "responder" && selected && !isLocated(selected) ? suggestion : null}
-          />
-        </div>
+        {mapEl}
 
         {selected && (
           <article className="detail" aria-label="Selected report">
@@ -439,32 +839,10 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                   {report.publicId === selectedIncident.anchorId && <span className="pill">Anchor report</span>}
                 </button></li>)}</ul>
               </section>}
-              {mode === "responder" && selected.note && <p><strong>Reporter wrote:</strong> {selected.note}</p>}
               {selected.reviewReasons.length > 0 && (
                 <div className="review" role="note">
                   <strong>Check before acting:</strong>
                   <ul>{selected.reviewReasons.map((r) => <li key={r}>{r}</li>)}</ul>
-                </div>
-              )}
-              {mode === "responder" && selected.imageReview && selected.imageReview.state !== "not_assessed" && (
-                <div className={imageConcern(selected) ? "review" : "image-check"} role="note">
-                  <strong>AI image check (separate from the score):</strong> {IMAGE_CHECK[selected.imageReview.state]}
-                  {selected.imageReview.concerns.length > 0 && (
-                    <ul>{selected.imageReview.concerns.map((c) => <li key={c}>{c}</li>)}</ul>
-                  )}
-                  {selected.imageReview.acceptedAt && (
-                    <p className="hint">
-                      A responder accepted this image as evidence on{" "}
-                      {new Date(selected.imageReview.acceptedAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}.
-                      The model&apos;s concerns are kept for the record.
-                    </p>
-                  )}
-                  {selected.imageReview.model && <p className="hint">Checked with {selected.imageReview.model}. It cannot detect SynthID or C2PA, and can be wrong both ways.</p>}
-                  {imageConcern(selected) && (
-                    <button className="btn" disabled={busy} onClick={() => patch({ acceptImage: true })}>
-                      Accept image evidence after review
-                    </button>
-                  )}
                 </div>
               )}
               <dl>
@@ -475,13 +853,12 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                       <a href={`https://www.google.com/maps?q=${selected.lat},${selected.lng}`} target="_blank" rel="noreferrer">
                         {selected.lat.toFixed(4)}, {selected.lng.toFixed(4)}
                       </a>
-                      {mode === "public" ? " (approximate)" : <span className="hint"> · {LOCATION_SOURCE_LABEL[selected.locationSource]}</span>}
+                      " (approximate)"
                     </>
                   ) : (
                     <span className="pill pill-warn">No location yet</span>
                   )}
                 </dd>
-                {mode === "responder" && selected.placeHint && <><dt>Place hint</dt><dd>{selected.placeHint}</dd></>}
                 <dt>People visible</dt><dd className="num">{selected.peopleVisible}</dd>
                 <dt>Anyone in danger</dt><dd>{selected.peopleInDanger ? "Yes" : "No sign"}</dd>
                 <dt>Water depth</dt><dd>{DEPTH_LABEL[selected.waterDepth]}</dd>
@@ -489,10 +866,9 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                 <dt>Also seen</dt><dd>{selected.categories.filter((c) => c !== selected.primaryCategory).map((c) => CATEGORY_LABEL[c]).join(", ") || "Nothing else"}</dd>
                 <dt>Independent reports</dt><dd className="num">{selected.corroborations + 1}{duplicates.length > 0 && `, plus ${duplicates.length} forwarded copies merged`}</dd>
                 <dt>Triage</dt><dd>{selected.aiMode === "live" ? "Cloudinary AI Vision" : "Rule-based from reporter's note"}</dd>
-                {mode === "responder" && <><dt>Status</dt><dd>{selected.status}</dd></>}
               </dl>
 
-              <details className="why" open={mode === "responder"}>
+              <details className="why">
                 <summary>Why this score</summary>
                 <table>
                   <tbody>
@@ -509,44 +885,7 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
                 </table>
               </details>
 
-              {mode === "responder" && selected.history.length > 0 && (
-                <details className="why activity">
-                  <summary>Activity ({selected.history.length})</summary>
-                  <ol>
-                    {[...selected.history].reverse().map((h, i) => (
-                      <li key={i}>
-                        <time dateTime={h.at}>{new Date(h.at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</time>
-                        <span>{HISTORY_LABEL[h.action]}</span>
-                      </li>
-                    ))}
-                  </ol>
-                </details>
-              )}
 
-              {mode === "responder" && (
-                <div className="row">
-                  {!selected.duplicateOf && (
-                    <button className="btn" disabled={busy} aria-pressed={pinning} onClick={() => setPinning((p) => !p)}>
-                      {pinning ? "Cancel pinning" : isLocated(selected) ? "Move pin" : "Pin location"}
-                    </button>
-                  )}
-                  {/* Only the report's current status is highlighted. */}
-                  {NEXT_STATUS.map((s) => {
-                    const current = s.status === selected.status;
-                    return (
-                      <button
-                        key={s.status}
-                        className={current ? "btn btn-primary" : "btn"}
-                        aria-pressed={current}
-                        disabled={busy}
-                        onClick={() => !current && patch({ status: s.status })}
-                      >
-                        {s.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
             </div>
             <div className="media">
               {selected.resourceType === "video" ? (
@@ -557,35 +896,13 @@ export default function OpsBoard({ mode }: { mode: "public" | "responder" }) {
               <div className="row">
                 <a className="btn" href={alertCardUrl(selected)} target="_blank" rel="noreferrer">Alert card</a>
                 <a className="btn" href={`/v/${shortId(selected.publicId)}`} target="_blank" rel="noreferrer" title="Public page and Instagram card for this report">Fact-check page</a>
-                {mode === "responder" && selected.resourceType === "image" && (
-                  <button className="btn" onClick={() => setReveal((v) => !v)}>{reveal ? "Pixelate faces" : "Show faces"}</button>
-                )}
-                {mode === "responder" && (
-                  <a className="btn" href={originalUrl(selected)} target="_blank" rel="noreferrer">Original file</a>
-                )}
               </div>
             </div>
           </article>
         )}
       </section>
 
-      <dialog
-        ref={helpRef}
-        className="shortcuts"
-        aria-labelledby="shortcuts-h"
-        onClick={(e) => e.target === e.currentTarget && helpRef.current?.close()}
-      >
-        <h2 id="shortcuts-h">Keyboard shortcuts</h2>
-        <dl>
-          {SHORTCUTS.filter((s) => mode === "responder" || !s.responderOnly).map((s) => (
-            <div key={s.keys}>
-              <dt><kbd>{s.keys}</kbd></dt>
-              <dd>{s.action}</dd>
-            </div>
-          ))}
-        </dl>
-        <form method="dialog"><button className="btn">Close</button></form>
-      </dialog>
+      {shortcutsEl}
     </main>
   );
 }
