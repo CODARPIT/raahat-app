@@ -171,6 +171,7 @@ function reviewOf(c: Ctx, located: boolean): ImageReview {
     concerns: c.ir_why ? c.ir_why.split(REASON_SEP).filter(Boolean) : [],
     acceptedAt: c.ir_ok || null,
     votesAdded: c.ir_votes === "1",
+    error: c.ir_err || null,
   });
 }
 
@@ -212,6 +213,7 @@ function toContext(r: Report): Ctx {
     ir_why: r.imageReview.concerns.join(REASON_SEP).slice(0, 400),
     ir_ok: r.imageReview.acceptedAt ?? "",
     ir_votes: r.imageReview.votesAdded ? "1" : "0",
+    ir_err: (r.imageReview.state === "unavailable" ? r.imageReview.error ?? "" : "").slice(0, 160),
   };
 }
 
@@ -617,6 +619,7 @@ async function finishReview(r: Report, a: Assessment): Promise<Report> {
       at: new Date().toISOString(),
       model: a.model,
       concerns: a.state === "suspected" ? a.concerns : [],
+      error: a.state === "unavailable" ? a.reason ?? null : null,
     },
   };
   return save(await castVotes(reviewed));
